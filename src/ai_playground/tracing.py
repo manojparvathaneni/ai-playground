@@ -64,11 +64,22 @@ def langfuse_auth_header(public_key: str, secret_key: str) -> str:
     return f"Basic {credentials}"
 
 
+def langfuse_headers(public_key: str, secret_key: str) -> dict[str, str]:
+    """The HTTP headers sent to Langfuse with every batch of spans."""
+    return {
+        "Authorization": langfuse_auth_header(public_key, secret_key),
+        # Tells Langfuse 4 the spans are in its current format, so they can
+        # be read back through its API at once (/api/public/v2/observations)
+        # instead of after a delay of up to 15 minutes.
+        "x-langfuse-ingestion-version": "4",
+    }
+
+
 def langfuse_exporter(settings: Settings, public_key: str, secret_key: str) -> SpanExporter:
     """Exporter for Langfuse; by default the local one on port 3000."""
     return OTLPSpanExporter(
         endpoint=f"{settings.langfuse_host}/api/public/otel/v1/traces",
-        headers={"Authorization": langfuse_auth_header(public_key, secret_key)},
+        headers=langfuse_headers(public_key, secret_key),
     )
 
 

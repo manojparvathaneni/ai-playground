@@ -268,8 +268,9 @@ spans ──────────►├── BatchSpanProcessor ──► OT
 - **OTLPSpanExporter** sends a batch over HTTP using **OTLP**, the
   OpenTelemetry Protocol. Every OpenTelemetry-compatible tool accepts OTLP,
   so the exporter code for Phoenix and Langfuse is the same apart from the
-  address. Langfuse also checks the API keys, sent in an `Authorization`
-  header (see `langfuse_exporter()`).
+  address. Langfuse also needs two headers (see `langfuse_headers()`): the
+  API keys in `Authorization`, and `x-langfuse-ingestion-version: 4`, which
+  makes new spans readable through its API straight away.
 
 `trace.set_tracer_provider(tracer_provider)` makes this provider the one the
 whole program uses, which is how the spans created in `llm.py` find it.
