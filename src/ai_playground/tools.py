@@ -5,15 +5,24 @@ hints, and pass it in call_llm(..., tools=[...]). make_tool_schema() turns it
 into the description the model reads.
 """
 
-from datetime import datetime
 import inspect
+from collections.abc import Callable
+from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
+
+from openai.types.responses import FunctionToolParam
+
+# A tool is any Python function. Callable[..., Any] means "a function that
+# takes any arguments and returns anything".
+Tool = Callable[..., Any]
 
 
 # ---------------------------------------------------------------------------
 # Example tools: plain Python functions the model is allowed to call.
 # The docstring is what the model reads to decide when to use each tool.
 # ---------------------------------------------------------------------------
+
 
 def get_current_time() -> str:
     """Get the current local time."""
@@ -30,10 +39,10 @@ def get_current_time_in_timezone(timezone: str) -> str:
 # ---------------------------------------------------------------------------
 
 # How each Python type is written in JSON Schema.
-JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}
+JSON_TYPES: dict[type, str] = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
 
-def make_tool_schema(tool) -> dict:
+def make_tool_schema(tool: Tool) -> FunctionToolParam:
     """Describe a Python function in the JSON format the model understands.
 
     For example, for this function:
@@ -61,18 +70,23 @@ def make_tool_schema(tool) -> dict:
     # that is just "timezone", and parameter.annotation is its type hint, str.
     parameters = inspect.signature(tool).parameters
 
-    properties = {}  # each argument's name and JSON type
-    required = []    # names of the arguments the model must fill in
+    properties: dict[str, dict[str, str]] = {}  # each argument's name and JSON type
+    required: list[str] = []  # arguments the model must fill in
     for name, parameter in parameters.items():
-        python_type = parameter.annotation          # e.g. str
-        json_type = JSON_TYPES[python_type]         # e.g. "string"
+        python_type = parameter.annotation  # e.g. str
+        if python_type not in JSON_TYPES:
+            raise TypeError(
+                f"Tool {tool.__name__}: parameter '{name}' needs a type hint of "
+                f"str, int, float or bool, not {python_type!r}"
+            )
+        json_type = JSON_TYPES[python_type]  # e.g. "string"
         properties[name] = {"type": json_type}
         required.append(name)
 
     return {
         "type": "function",
         "name": tool.__name__,
-        "description": tool.__doc__,
+        "description": inspect.getdoc(tool) or "",
         "parameters": {
             "type": "object",
             "properties": properties,

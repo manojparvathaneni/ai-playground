@@ -13,7 +13,7 @@ dependencies = [
     "opentelemetry-api>=1.45.1",
     "opentelemetry-exporter-otlp-proto-http>=1.45.1",
     "opentelemetry-sdk>=1.45.1",
-    "python-dotenv>=1.2.4",
+    "pydantic-settings>=2.16.1",
 ]
 
 # Extra packages for particular experiments, installed only when asked for.
@@ -21,7 +21,44 @@ dependencies = [
 # Install it with:   uv sync --group <name>
 # For example, a "rag" group for retrieval experiments, or "notebooks" for Jupyter.
 [dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14.0"]
 build-backend = "uv_build"
+
+# ---------------------------------------------------------------------------
+# Developer tools. Run them all with `make check` (see the Makefile).
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+# Code samples in the docs are laid out by hand for teaching; leave them alone.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+# E/W: style errors, F: likely bugs (unused names, undefined names),
+# I: import order, UP: newer Python syntax, B: common bug patterns.
+select = ["E", "W", "F", "I", "UP", "B"]
+
+[tool.mypy]
+# Type-check the shared code strictly. Experiments are for trying things
+# out, so they are left out.
+files = ["src", "tests"]
+strict = true
+
+[[tool.mypy.overrides]]
+# Tests use mocks and fake data; requiring types on every test function
+# adds noise without catching much.
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
