@@ -1,0 +1,13 @@
+# Once a week, Dependabot checks the actions in .github/workflows for new
+# versions and opens a pull request for each one. CI runs on that pull
+# request, so you can see whether the update breaks anything before merging.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Wait until a release is two weeks old, so a broken or malicious release
+    # is usually caught by others first.
+    cooldown:
+      default-days: 14

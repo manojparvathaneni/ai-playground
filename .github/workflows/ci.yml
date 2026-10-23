@@ -8,14 +8,21 @@ on:
     branches: [main]
   pull_request:
 
+# The workflow only reads the code, so it gets no permission to change it.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Actions are pinned to a commit hash, which can't be changed later the
+      # way a tag like @v7 can. The comment shows which version that hash is.
+      # Dependabot (.github/dependabot.yml) proposes updates as pull requests.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Installs uv, which then installs the Python version in .python-version.
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       # --locked fails if uv.lock doesn't match pyproject.toml, instead of
       # quietly updating it.

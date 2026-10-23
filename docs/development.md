@@ -160,6 +160,7 @@ would run them on a schedule or before each release, against a hosted model.
 | What | How |
 |---|---|
 | Python packages | `uv lock --upgrade`, then `make requirements` and `make check` |
+| GitHub Actions | Dependabot ([`.github/dependabot.yml`](../.github/dependabot.yml)) opens a pull request each week a new version is out; merge it once CI passes |
 | Phoenix | Change the image tag in [`docker-compose.yml`](../docker-compose.yml) (pinned to a major version, such as `version-20`), then `docker compose pull && make up` |
 | Langfuse | Replace [`docker/langfuse/docker-compose.yml`](../docker/langfuse/docker-compose.yml) with the latest official file, keeping the header, then `docker compose pull && make up` |
 
