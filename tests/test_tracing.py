@@ -7,7 +7,13 @@ from opentelemetry.trace import StatusCode
 
 from ai_playground.llm import call_llm
 from ai_playground.tools import get_current_time, get_current_time_in_timezone
-from ai_playground.tracing import SpanKind, langfuse_auth_header, make_exporters, span
+from ai_playground.tracing import (
+    SpanKind,
+    langfuse_auth_header,
+    langfuse_headers,
+    make_exporters,
+    span,
+)
 from tests.fakes import function_call, response_with, text_answer
 
 
@@ -102,3 +108,10 @@ def test_traces_go_to_both_tools_with_langfuse_keys(settings):
 def test_langfuse_auth_header():
     # "pk:sk", base64-encoded
     assert langfuse_auth_header("pk", "sk") == "Basic cGs6c2s="
+
+
+def test_langfuse_headers_sign_in_and_ask_for_the_current_format():
+    assert langfuse_headers("pk", "sk") == {
+        "Authorization": "Basic cGs6c2s=",
+        "x-langfuse-ingestion-version": "4",
+    }
