@@ -180,8 +180,37 @@ LLM_MODEL=qwen/qwen3.6-35b-a3b LLM_REASONING_EFFORT=none \
 (The Gemma numbers above were measured before the validator order fix.
 Rerun them with Gemma loaded to compare like for like.)
 
+### Claude Haiku 5.5
+
+With `LLM_PROVIDER=anthropic LLM_MODEL=claude-haiku-5-5`, three runs passed
+**5 of 5 each (100%)**, including the "SEV A" invoice question and the
+60-user VPN case that the local models got wrong. Each run took about 16
+seconds, and the three together cost about half a cent.
+
+| Model | Average over three runs |
+|---|---|
+| `google/gemma-4-e4b` (local) | 53% |
+| `qwen/qwen3.6-35b-a3b` (local, thinking off) | 73% |
+| `claude-haiku-5-5` | 100% |
+
+14 of the 15 cases took a single request. The one retry is worth a look:
+for the vague database case, Haiku listed six questions in
+`missing_info`, where the schema allows five. Claude's structured output
+enforces the shape (fields, types, allowed values) but not limits such as
+`maxItems`, `maxLength` or `minimum`: Pydantic AI moves those into the
+field's description, where they're only a request, and Pydantic checks
+them after the reply arrives. That's the second layer from the notebook
+doing its job: it caught the extra question, and the retry fixed it.
+
+Five cases are too few to call Haiku perfect: the next step is harder
+cases (see Try next).
+
 ## Try next
 
+- **Harder cases.** Haiku passes all five; add cases where the right answer
+  is less obvious (an outage described without a number, a question that
+  quotes an error code, a customer who exaggerates) and compare models
+  again.
 - **Compare models.** Run the evaluation with another `LLM_MODEL` and compare
   the experiments on the `triage-cases` dataset, case by case.
 - **Add a case.** A case that's hard for the current rules: a group outage
