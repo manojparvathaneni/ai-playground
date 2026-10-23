@@ -14,7 +14,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from ai_playground.config import Settings
-from ai_playground.tracing import ExperimentAttributes
+from ai_playground.tracing import ExperimentAttributes, RunAttributes
 from tests.fakes import FakeModel
 
 # Record spans in memory instead of sending them anywhere, so tests can check
@@ -22,7 +22,8 @@ from tests.fakes import FakeModel
 # this runs once, when pytest loads this file.
 _span_exporter = InMemorySpanExporter()
 _provider = TracerProvider()
-_provider.add_span_processor(ExperimentAttributes())  # as setup_tracing() does
+_provider.add_span_processor(RunAttributes())  # as setup_tracing() does
+_provider.add_span_processor(ExperimentAttributes())
 _provider.add_span_processor(SimpleSpanProcessor(_span_exporter))
 trace.set_tracer_provider(_provider)
 

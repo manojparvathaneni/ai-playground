@@ -7,8 +7,8 @@
 help:  ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
 
-install:  ## Create .venv with all dependencies, including the dev tools
-	uv sync
+install:  ## Create .venv with every dependency group: dev tools and all experiments
+	uv sync --all-groups
 
 check: lint typecheck test lock  ## Run every check that CI runs. Do this before committing.
 

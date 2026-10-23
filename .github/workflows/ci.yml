@@ -25,9 +25,10 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       # --locked fails if uv.lock doesn't match pyproject.toml, instead of
-      # quietly updating it.
+      # quietly updating it. --all-groups installs every experiment's extra
+      # packages too, so all of their tests run.
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --all-groups
 
       - name: Run checks
         run: make check
