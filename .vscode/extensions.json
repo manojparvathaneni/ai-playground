@@ -1,0 +1,5 @@
+{
+    // VS Code offers to install these when the project is opened.
+    // ty checks types and ruff checks style, the same tools as `make check`.
+    "recommendations": ["astral-sh.ty", "charliermarsh.ruff"]
+}
