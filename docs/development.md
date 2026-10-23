@@ -94,6 +94,11 @@ understand or undo.
 
 `make format` fixes formatting and anything else ruff can fix by itself.
 
+In VS Code, the ty and Ruff extensions show the same problems as you type.
+[`.vscode/settings.json`](../.vscode/settings.json) turns Pylance off and
+makes ty use the version in `.venv`, so the editor, `make check` and CI
+agree. VS Code offers to install both extensions when you open the project.
+
 The same checks run in GitHub Actions
 ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) on every push to
 `main` and every pull request.

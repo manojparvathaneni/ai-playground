@@ -1,0 +1,16 @@
+{
+    // Use ty for type errors, completions, hover and go-to-definition, the
+    // same checker `make check` and CI run. Pylance is turned off, so the two
+    // don't report the same problems twice or disagree.
+    "python.languageServer": "None",
+
+    // Use the ty in .venv, so the editor runs the version in uv.lock.
+    "ty.importStrategy": "fromEnvironment",
+
+    // Let ty ask uv for the project's environment (experimental; see
+    // https://astral.sh/blog/uv-ty-integration).
+    "ty.experimental.useUv": "on",
+
+    // Show problems in every file, not only the ones that are open.
+    "ty.diagnosticMode": "workspace"
+}
