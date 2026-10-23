@@ -20,7 +20,7 @@ UTC?"* by calling two Python tools, `get_current_time` and
 ## Run it
 
 Needs a model server on `http://localhost:1234` (such as LM Studio) with
-`google/gemma-4-e4b` loaded, or change `model=` in `main.py`. For traces,
+`google/gemma-4-e4b` loaded, or set `LLM_MODEL` in `.env`. For traces,
 start the containers first (`docker compose up -d`).
 
 ```sh

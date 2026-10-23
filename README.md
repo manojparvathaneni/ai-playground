@@ -8,23 +8,26 @@ model and your code did.
 
 ```
 ├── src/ai_playground/      shared code that experiments reuse
+│   ├── config.py           Settings: every setting, read from env vars and .env
 │   ├── llm.py              call_llm(): the agent loop
 │   ├── tools.py            example tools, and make_tool_schema()
-│   └── tracing.py          setup_tracing() and span helpers
+│   ├── tracing.py          setup_tracing() and span helpers
+│   ├── evals.py            run cases through an application and grade them
+│   └── scores.py           send eval scores to Phoenix and Langfuse
 ├── experiments/            one numbered folder per experiment
-│   └── 01_tool_calling/    a model that calls Python tools
 ├── tests/                  offline tests for src/ai_playground
-├── docs/                   longer guides, such as tracing.md
-├── docker/                 container setup that needs its own folder
-├── docker-compose.yml      Phoenix and Langfuse, for tracing
-├── pyproject.toml          project settings and dependencies
+├── docs/                   longer guides
+├── docker/ + docker-compose.yml   Phoenix and Langfuse, for tracing
+├── .github/workflows/      CI: runs `make check` on every push and pull request
+├── Makefile                shortcuts: `make check`, `make up`, ... (run `make` to list)
+├── pyproject.toml          dependencies and tool settings
 └── .env.example            template for .env (settings and secrets)
 ```
 
-**Shared code vs experiments.** Code goes in `src/ai_playground/` once more
-than one experiment needs it, or once it's worth testing. Everything else
-stays in the experiment's folder. Start new ideas in an experiment, and move
-pieces into `src/` when you find yourself copying them.
+**Shared code vs experiments.** Start new ideas in an experiment. Move code
+into `src/ai_playground/` when a second experiment needs it; there it gets
+type hints and tests. See [docs/development.md](docs/development.md) for the
+rules and the everyday routine.
 
 ## Getting started
 
@@ -33,42 +36,33 @@ supports the OpenAI Responses API and function calling, such as
 [LM Studio](https://lmstudio.ai) on `http://localhost:1234`.
 
 ```sh
-uv sync                                          # create .venv with the dependencies
+make install                                     # create .venv with all dependencies
+cp .env.example .env                             # then fill in the secrets (see Tracing)
+make up                                          # start Phoenix and Langfuse
 uv run python experiments/01_tool_calling/main.py
 ```
 
-Tracing needs Phoenix and Langfuse running; see [Tracing](#tracing) below.
+The model, server and other settings have defaults in
+[`config.py`](src/ai_playground/config.py); override any of them in `.env`,
+for example `LLM_MODEL=qwen/qwen3.6-35b-a3b`.
 
 ## Experiments
 
 | # | Experiment | What it shows |
 |---|---|---|
 | 01 | [Tool calling](experiments/01_tool_calling/) | The agent loop: the model asks for tools, we run them, it answers. Traced in Phoenix and Langfuse. |
+| 02 | [Evaluation](experiments/02_evaluation/) | Scoring the agent on a set of questions, with the scores shown in Phoenix and Langfuse. |
 
-### Adding an experiment
+To add one, see [Adding an experiment](docs/development.md#8-adding-an-experiment-step-by-step).
+Packages that only some experiments need go in a dependency group, so the
+base environment stays small; see [Dependencies](docs/development.md#6-dependencies).
 
-1. Create the next numbered folder, such as `experiments/02_<topic>/`, with a
-   `main.py` and a short `README.md` saying what it explores.
-2. Import shared code from `ai_playground`, for example
-   `from ai_playground.llm import call_llm`.
-3. Run it with `uv run python experiments/02_<topic>/main.py`.
-4. Add it to the table above.
+## Guides
 
-### Adding packages
-
-Packages that every experiment uses are in `dependencies` in
-`pyproject.toml`; keep that list short. Packages only some experiments need
-go in a named **dependency group**, so the base environment stays small:
-
-```sh
-uv add --group rag chromadb     # add chromadb to a "rag" group
-uv sync --group rag             # install the base packages plus that group
-```
-
-The experiment's README should say which group it needs. `uv.lock` records
-the exact versions; commit it along with `pyproject.toml`.
-`requirements.txt` is generated from `uv.lock` for tools that need one; see
-its header for how to regenerate it.
+- [docs/development.md](docs/development.md): where code goes, the checks,
+  settings, dependencies, and the everyday routine.
+- [docs/tracing.md](docs/tracing.md): traces and spans, how they reach
+  Phoenix and Langfuse, scores, and exercises.
 
 ## Tracing
 
@@ -139,11 +133,13 @@ If `setup_tracing()` is not called, the spans do nothing.
 and spans, how the code builds the tree above, how spans reach both tools,
 what each Docker container does, and has exercises and troubleshooting tips.
 
-## Tests
-
-The tests cover the shared code and run offline, with no model or Docker
-needed:
+## Checks
 
 ```sh
-uv run python -m unittest discover -s tests
+make check      # lint, formatting, type checks, tests, lock file: what CI runs
+make format     # fix formatting automatically
 ```
+
+The tests run offline, with no model server or Docker needed. See
+[the checks](docs/development.md#4-the-checks-and-what-each-one-catches) for
+what each one catches.

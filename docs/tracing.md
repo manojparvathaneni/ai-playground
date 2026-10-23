@@ -206,6 +206,35 @@ The automatic `Response` spans carry many more attributes, such as
 `llm.model_name`, `llm.token_count.prompt`, `llm.token_count.completion` and
 `llm.input_messages.*`. Click a `Response` span in Phoenix to see them all.
 
+### Other kinds of step, as the playground grows
+
+OpenInference defines more kinds than this experiment uses. All of them are
+listed in `SpanKind` in `tracing.py`, and the general `span()` helper creates
+a span of any kind:
+
+```python
+from ai_playground.tracing import SpanKind, set_output, span
+
+with span("search docs", SpanKind.RETRIEVER, question) as current:
+    documents = search(question)
+    set_output(current, json.dumps(documents))
+```
+
+`agent_span`, `turn_span` and `tool_span` are just shortcuts built on
+`span()`. What later experiments are likely to need:
+
+| Building | Spans to expect | What to do |
+|---|---|---|
+| RAG (retrieval) | EMBEDDING, RETRIEVER, RERANKER | Use `span()` with that kind around each step. If the library has an OpenInference instrumentor, add it in `setup_tracing()` and the spans appear by themselves. |
+| Guardrails | GUARDRAIL | `span()` around each check, with the verdict as the output. |
+| Evaluations | EVALUATOR | Already done: `evals.py` puts each grade in an EVALUATOR span. |
+| MCP tools | TOOL | A tool called through MCP still goes through `run_tool()`, so it gets a tool span. When the MCP server is a separate program, OpenInference's MCP instrumentor passes the trace along, so spans the server creates join the same trace instead of starting a new one. |
+| Several agents | AGENT inside AGENT | Nothing to do: an agent run inside another agent's tool becomes its child automatically (section 4). |
+| Chat with memory | many traces, one per message | Group them into a *session* by setting a `session.id` attribute, which both tools use to show a whole conversation together. |
+
+In each case the new code goes in `tracing.py`, and the rest of the code
+keeps calling helpers.
+
 ### Why the names live only in `tracing.py`
 
 `llm.py` never writes an attribute name. It calls helpers like
@@ -260,14 +289,20 @@ whole program uses, which is how the spans created in `llm.py` find it.
 
 ### Where settings come from
 
-The experiment's `main.py` calls `load_dotenv()`, which reads `.env` into environment
-variables. `tracing.py` then reads:
+All settings live in one class, `Settings` in
+[`config.py`](../src/ai_playground/config.py). Each field can be set by an
+environment variable of the same name in capitals, or by a line in `.env`.
+The tracing settings are:
 
 | Variable | Default | Used for |
 |---|---|---|
+| `TRACE_PROJECT_NAME` | `agentic-ai-course` | The Phoenix project traces are grouped under |
 | `PHOENIX_COLLECTOR_ENDPOINT` | `http://localhost:6006` | Phoenix address |
 | `LANGFUSE_HOST` | `http://localhost:3000` | Langfuse address |
-| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | none | Langfuse API keys. Without the public key, Langfuse is skipped. |
+| `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | none | Langfuse API keys. Without them, Langfuse is skipped. |
+
+Langfuse ignores `TRACE_PROJECT_NAME`: its project is the one the API keys
+belong to.
 
 ## 8. Phoenix and Langfuse side by side
 
@@ -296,9 +331,28 @@ Some things to compare as you click around:
   turn 2: the second sends more input, because the history now includes the
   first reply and the tool results.
 
-Features beyond traces differ more. Both can store evaluations and datasets,
-and Langfuse also has prompt management and cost dashboards. Those are worth
-exploring once traces feel familiar.
+### Scores from evaluations
+
+[Experiment 02](../experiments/02_evaluation/) grades the agent's answers
+and attaches each verdict to that case's trace, using
+[`scores.py`](../src/ai_playground/scores.py). Scores aren't spans: both
+tools store them separately and receive them through their own APIs, after
+the spans have been sent.
+
+| | Phoenix | Langfuse |
+|---|---|---|
+| Called | annotation | score |
+| Sent to | `POST /v1/trace_annotations` | `POST /api/public/scores` |
+| What's stored | label (`pass`/`fail`), score (1 or 0), explanation | value (1 or 0, as a boolean), comment |
+| Where to see it | the trace's annotations; filter or add a column for `correct` | the trace's scores, and the Scores page |
+
+Filtering by score is the quickest way to find failures: show only traces
+where `correct` is `fail` (Phoenix) or `0` (Langfuse), then open one to see
+what the model did.
+
+Other features differ more. Langfuse has prompt management and cost
+dashboards; both can store datasets of test cases. Those are worth exploring
+once traces and scores feel familiar.
 
 ## 9. What runs in Docker
 
@@ -376,7 +430,7 @@ find the newest trace in both tools.
    like. Find it on the tool spans in Phoenix. Then notice that `llm.py`
    didn't change.
 
-7. **Compare models.** Change `model=` in `main.py` to another model loaded
+7. **Compare models.** Set `LLM_MODEL` in `.env` to another model loaded
    in LM Studio, run the same question, and compare the two traces: number of
    turns, tokens per call and time per call.
 
