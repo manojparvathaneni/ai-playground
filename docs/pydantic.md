@@ -824,6 +824,26 @@ model = OpenAIChatModel(
 agent = Agent(model)
 ```
 
+For Claude, the same agent takes an `AnthropicModel`, which goes through
+Anthropic's own API. (Anthropic also has an OpenAI-compatible endpoint, but
+it ignores `response_format`, so `NativeOutput`'s schema wouldn't be
+enforced.)
+
+```python
+from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
+from pydantic_ai.providers.anthropic import AnthropicProvider
+
+# Needs ANTHROPIC_API_KEY in .env; without it, AnthropicProvider raises UserError.
+claude = AnthropicModel(
+    "claude-haiku-5-5",
+    provider=AnthropicProvider(api_key=settings.anthropic_api_key),
+    settings=AnthropicModelSettings(anthropic_effort="medium"),
+)
+```
+
+In this project, `LLM_PROVIDER=anthropic` makes experiment 03's
+`make_model()` do this for you.
+
 ### Output modes
 
 `output_type` can reach the model three ways, and the choice matters more

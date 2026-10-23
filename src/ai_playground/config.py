@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     )
 
     # --- The model server ---------------------------------------------------
+    # "openai": any OpenAI-compatible server, such as LM Studio (the default).
+    # "anthropic": Claude, through Anthropic's own API, with llm_model set to
+    # a Claude model such as "claude-haiku-5-5" and anthropic_api_key set.
+    # Only experiment 03 can use "anthropic" so far (see its make_model()).
+    llm_provider: Literal["openai", "anthropic"] = "openai"
     llm_base_url: str = "http://localhost:1234/v1"
     llm_model: str = "google/gemma-4-e4b"
     # Local servers such as LM Studio don't check the key, but the OpenAI
@@ -35,7 +40,12 @@ class Settings(BaseSettings):
     # Leave unset for models that don't think: some servers reject it for
     # them. With JSON output, LM Studio files a thinking model's whole answer
     # as its reasoning and sends an empty reply, so set "none" there.
+    # For Claude it's the effort level: "low", "medium" or "high" ("none" and
+    # "minimal" don't exist there); unset means "medium".
     llm_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
+    # Claude API key, from ANTHROPIC_API_KEY in .env. Only for llm_provider
+    # "anthropic". Get one at https://platform.claude.com/settings/keys
+    anthropic_api_key: str | None = None
 
     # --- The agent loop -------------------------------------------------------
     # Stop with an error if the model is still asking for tools after this
