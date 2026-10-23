@@ -12,8 +12,11 @@ from pydantic_ai import (
     capture_run_messages,
     models,
 )
+from pydantic_ai.messages import ThinkingPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from triage import CaseDeps, TriageValidated, triage_agent
+from triage import CaseDeps, TriageValidated, make_model, triage_agent
+
+from ai_playground.config import Settings
 
 # Any request to a real model fails the test instead of being sent.
 models.ALLOW_MODEL_REQUESTS = False
@@ -66,10 +69,10 @@ def test_a_number_written_as_a_word_counts():
     ("change", "message"),
     [
         ({"error_codes": ["AADSTS50076", "AADSTS700016"]}, "not found in the case text"),
-        ({"customer_impact": "single_user"}, "'single_user' must be severity C"),
-        ({"customer_impact": "question", "severity": "B"}, "'question' must be severity C"),
+        ({"customer_impact": "question"}, "severity A and customer_impact 'question' don't fit"),
+        ({"customer_impact": "question", "severity": "B"}, "Fix whichever is wrong"),
         (
-            {"customer_impact": "single_user", "severity": "C"},
+            {"customer_impact": "question", "severity": "C"},
             "severity C cases must set needs_escalation to false",
         ),
         ({"affected_users": 400}, "never states that number"),
@@ -133,7 +136,7 @@ def test_a_failed_check_is_sent_back_and_the_model_corrects_itself():
 
     assert output.severity == "C"
     (prompt,) = retry_prompts(messages)
-    assert "customer_impact 'question' must be severity C" in prompt
+    assert "severity A and customer_impact 'question' don't fit together" in prompt
 
 
 def test_the_unified_plan_rule_uses_the_deps():
@@ -150,3 +153,34 @@ def test_the_unified_plan_rule_uses_the_deps():
 def test_the_agent_gives_up_after_two_retries():
     with pytest.raises(UnexpectedModelBehavior, match="Exceeded maximum output retries"):
         run(INVOICE_CASE, "standard", answers(WRONG, WRONG, WRONG))
+
+
+def test_an_answer_sent_as_thinking_is_never_accepted():
+    # What LM Studio does with a thinking model and JSON output: the answer
+    # arrives as reasoning, and the reply itself is empty. Pydantic AI asks
+    # for text each time, the model does the same thing again, and the run
+    # gives up. Retries can't fix this; LLM_REASONING_EFFORT=none does.
+    def thinks_only(messages, info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ThinkingPart(json.dumps(RIGHT))])
+
+    with pytest.raises(UnexpectedModelBehavior, match="Exceeded maximum output retries"):
+        run(INVOICE_CASE, "standard", FunctionModel(thinks_only))
+
+
+def test_reasoning_effort_is_sent_only_when_set():
+    unset = Settings(_env_file=None, llm_reasoning_effort=None)
+    none = Settings(_env_file=None, llm_reasoning_effort="none")
+
+    assert "openai_reasoning_effort" not in (make_model(unset).settings or {})
+    assert (make_model(none).settings or {})["openai_reasoning_effort"] == "none"
+
+
+def test_a_group_labelled_single_user_is_told_the_impact_is_wrong():
+    # Qwen's answer for 60 people who can't reach the VPN. The severity is
+    # fine; the impact isn't, and the feedback has to say so.
+    text = "About 60 people in our London office cannot connect to the VPN since this morning."
+    answer = {**GOOD, "customer_impact": "single_user", "affected_users": None, "error_codes": []}
+
+    with pytest.raises(ValidationError, match="the case says 60 users are affected") as raised:
+        TriageValidated.model_validate(answer, context={"source_text": text})
+    assert "fit together" not in str(raised.value)  # not sent to change the severity

@@ -11,6 +11,8 @@ Use it like this:
     settings = Settings(llm_model="qwen/qwen3.6")  # override one value in code
 """
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +31,11 @@ class Settings(BaseSettings):
     llm_api_key: str = "not-needed-for-local-servers"
     llm_timeout_seconds: float = 60.0
     llm_max_retries: int = 2
+    # How much a "thinking" model (such as Qwen 3) reasons before answering.
+    # Leave unset for models that don't think: some servers reject it for
+    # them. With JSON output, LM Studio files a thinking model's whole answer
+    # as its reasoning and sends an empty reply, so set "none" there.
+    llm_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
 
     # --- The agent loop -------------------------------------------------------
     # Stop with an error if the model is still asking for tools after this

@@ -39,7 +39,7 @@ def span_exporter() -> InMemorySpanExporter:
 def settings() -> Settings:
     """Settings for tests, ignoring .env so results don't depend on your machine."""
     return Settings(
-        _env_file=None,  # type: ignore[call-arg]  # a pydantic-settings option, not a field
+        _env_file=None,  # a pydantic-settings option, not a field
         llm_base_url="http://example.test/v1",
         llm_model="test-model",
         llm_api_key="test-key",

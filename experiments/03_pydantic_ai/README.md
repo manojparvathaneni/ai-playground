@@ -119,12 +119,52 @@ by using null.
 What's still wrong is judgement: the invoice question sometimes stays at A
 (the model changes the impact instead of the severity), the vague database
 case sometimes asks no questions, and the share is often filed under
-`identity`. More rules won't fix judgement in a 4B model. The next step is
-a bigger one: `qwen/qwen3.6-35b-a3b` is in LM Studio, but this machine
-couldn't load it alongside Gemma (LM Studio stopped it to avoid running out
-of memory). Unload Gemma first, then run
-`LLM_MODEL=qwen/qwen3.6-35b-a3b uv run python experiments/03_pydantic_ai/evaluate.py`
-and compare the experiments on `triage-cases`.
+`identity`. More rules won't fix judgement in a 4B model.
+
+### A bigger model, and two retry problems
+
+`qwen/qwen3.6-35b-a3b` is in LM Studio too (load it on its own: this
+machine can't hold it and Gemma together). Its first runs failed in a new
+way: the held-out VPN case gave up after its retries, and every retry prompt
+said only "Please return text."
+
+1. **The answer arrived as "thinking".** Qwen is a thinking model, and with
+   JSON output LM Studio filed its whole answer as reasoning and sent an
+   empty reply. Pydantic AI found no text, asked for some, and got the same
+   empty reply each time: **retries can't fix a problem the model can't
+   see.** The fix is a setting, not a rule: `LLM_REASONING_EFFORT=none`
+   (see `config.py`) turns thinking off, and the answer comes back as text.
+2. **The first failing check named the wrong field.** With the answer
+   visible, Qwen labelled the 60 VPN users `single_user` at severity A.
+   `severity_matches_impact()` ran first and said "single_user must be
+   severity C", which is wrong for 60 users, so Qwen refused and sent the
+   same answer until the retries ran out. The precise message ("the case
+   says 60 users are affected; choose outage or degraded") was in a later
+   validator that never ran, because Pydantic stops at the first model
+   validator that fails. Running that validator first fixed it: Qwen
+   corrects the impact on its first retry.
+
+Three runs each with Qwen, thinking off:
+
+| Version | Runs (of 5) | Average | Runs that gave up |
+|---|---|---|---|
+| Before the validator order fix | 4, 4, 3 | 73% | 2 |
+| After | 4, 3, 4 | 73% | 0 |
+
+The pass rate stayed the same, but every failure is now a judgement the
+grader can score (Qwen rates the 60-user VPN case A, not B), rather than a
+run that wasted its retries. Qwen also gets all four original cases right
+in two runs of three, where Gemma managed at most three of the five.
+
+Run it with:
+
+```sh
+LLM_MODEL=qwen/qwen3.6-35b-a3b LLM_REASONING_EFFORT=none \
+  uv run python experiments/03_pydantic_ai/evaluate.py
+```
+
+(The Gemma numbers above were measured before the validator order fix.
+Rerun them with Gemma loaded to compare like for like.)
 
 ## Try next
 
