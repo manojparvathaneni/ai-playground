@@ -107,11 +107,14 @@ def make_exporters(settings: Settings) -> list[SpanExporter]:
 _tracer_provider: TracerProvider | None = None
 
 
-def setup_tracing(settings: Settings | None = None) -> TracerProvider:
+def setup_tracing(settings: Settings | None = None, *, pydantic_ai: bool = False) -> TracerProvider:
     """Send traces to Phoenix, and also to Langfuse if its keys are set.
 
     Call this once, at the start of the program, before calling the model.
     Calling it again (for example, re-running a notebook cell) is harmless.
+
+    pydantic_ai=True is for programs that call models through Pydantic AI
+    agents (experiment 03); see instrument_pydantic_ai() below.
     """
     global _tracer_provider
     if _tracer_provider is not None:
@@ -123,21 +126,48 @@ def setup_tracing(settings: Settings | None = None) -> TracerProvider:
     # attribute to group traces into a project.
     resource = Resource.create({"openinference.project.name": settings.trace_project_name})
     tracer_provider = TracerProvider(resource=resource)
-    # Copies experiment labels onto every span (see part 4 below).
-    tracer_provider.add_span_processor(ExperimentAttributes())
+    # Processors run in the order they are added, so these two, which only
+    # add labels, come before the ones that send spans away.
+    tracer_provider.add_span_processor(RunAttributes())  # part 3 below
+    tracer_provider.add_span_processor(ExperimentAttributes())  # part 4 below
+    if pydantic_ai:
+        instrument_pydantic_ai(tracer_provider)
     for exporter in make_exporters(settings):
         tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
 
     # Make this the provider that trace.get_tracer() (below) uses.
     trace.set_tracer_provider(tracer_provider)
 
-    # Automatically create a span for every call made with the OpenAI client.
-    # These spans hold the prompt, the model's reply, the tool definitions and
-    # the token counts, without us writing any tracing code for them.
-    OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
+    if not pydantic_ai:
+        # Automatically create a span for every call made with the OpenAI
+        # client. These spans hold the prompt, the model's reply, the tool
+        # definitions and the token counts, without us writing any tracing
+        # code for them.
+        OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
 
     _tracer_provider = tracer_provider
     return tracer_provider
+
+
+def instrument_pydantic_ai(tracer_provider: TracerProvider) -> None:
+    """Trace Pydantic AI agents with the framework's own spans.
+
+    Pydantic AI records each agent run and each model request itself, in
+    OpenTelemetry's standard "gen_ai" names. Langfuse reads those directly;
+    Phoenix needs OpenInference names, so a processor from OpenInference adds
+    them to each span as it ends. The OpenAI instrumentor stays off, because
+    Pydantic AI calls the OpenAI client inside its own model-request spans,
+    and every call would otherwise be recorded twice.
+
+    The imports are here, not at the top, because these packages are only in
+    the "pydantic-ai" dependency group.
+    """
+    from openinference.instrumentation.pydantic_ai import OpenInferenceSpanProcessor
+    from pydantic_ai import Agent
+    from pydantic_ai.models.instrumented import InstrumentationSettings
+
+    tracer_provider.add_span_processor(OpenInferenceSpanProcessor())
+    Agent.instrument_all(InstrumentationSettings(tracer_provider=tracer_provider))
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +216,6 @@ def span(name: str, kind: SpanKind, input_value: str | None = None) -> Generator
     """Start a span of any kind. The helpers below are shortcuts for common ones."""
     with tracer.start_as_current_span(name) as current:
         current.set_attribute(SPAN_KIND, kind)
-        # Inside traced_run(), add its session, user, tags and metadata.
-        current.set_attributes(dict(get_attributes_from_context()))
         if input_value is not None:
             current.set_attribute(INPUT, input_value)
         yield current
@@ -231,9 +259,17 @@ def set_output(current: Span, value: str) -> None:
 # can filter by: "every run with gemma", or "everything since commit abc123".
 #
 # using_attributes() comes from OpenInference. It puts these values in the
-# current context: the OpenAI instrumentor adds them to its spans, and span()
-# above adds them to ours.
+# current context, and RunAttributes copies them onto every span as it
+# starts, whoever creates it: span() above, the OpenAI instrumentor, or a
+# framework such as Pydantic AI.
 # ---------------------------------------------------------------------------
+
+
+class RunAttributes(SpanProcessor):
+    """Copies traced_run()'s session, user, tags and metadata onto every new span."""
+
+    def on_start(self, span: SdkSpan, parent_context: Context | None = None) -> None:
+        span.set_attributes(dict(get_attributes_from_context()))
 
 
 @dataclass

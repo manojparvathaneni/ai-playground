@@ -133,8 +133,11 @@ versions, so every machine installs the same thing. Commit both.
 | Only some experiments need it | `uv add --group <name> <package>` | a vector database for RAG |
 | Development tools | `uv add --dev <package>` | pytest, ruff, ty |
 
-Install a group with `uv sync --group <name>`, and say which group an
-experiment needs in its README. After any change, run `make requirements` to
+Say which group an experiment needs in its README. `make install` (and CI)
+installs every group, so every experiment and its tests can run; to install
+just one, use `uv sync --group <name>`. Plain `uv sync` removes the packages
+of groups you don't name, so experiments that need a group stop working until
+you run `make install` again. After any change, run `make requirements` to
 regenerate `requirements.txt`; `make check` fails until you do.
 
 ## 7. Evaluations

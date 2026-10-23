@@ -236,10 +236,39 @@ with span("search docs", SpanKind.RETRIEVER, question) as current:
 | Evaluations | EVALUATOR | Already done: `evals.py` puts each grade in an EVALUATOR span. |
 | MCP tools | TOOL | A tool called through MCP still goes through `run_tool()`, so it gets a tool span. When the MCP server is a separate program, OpenInference's MCP instrumentor passes the trace along, so spans the server creates join the same trace instead of starting a new one. |
 | Several agents | AGENT inside AGENT | Nothing to do: an agent run inside another agent's tool becomes its child automatically (section 4). |
+| Agent frameworks | the framework's own spans | Many frameworks trace themselves. Turn that on in `setup_tracing()`, as `pydantic_ai=True` does for Pydantic AI (see [framework spans](#framework-spans-pydantic-ai)). |
 | Chat with memory | many traces, one per message | Wrap each conversation in `traced_run()`, so its messages share a session, and pass the real user's ID instead of the setting (see [sessions](#sessions-the-traces-of-one-run)). |
 
 In each case the new code goes in `tracing.py`, and the rest of the code
 keeps calling helpers.
+
+### Framework spans: Pydantic AI
+
+[Experiment 03](../experiments/03_pydantic_ai/) calls the model through a
+Pydantic AI agent instead of our own `call_llm()`. Pydantic AI traces itself,
+so `setup_tracing(pydantic_ai=True)` turns that on instead of writing spans
+by hand. A case whose first answer failed validation looks like this:
+
+```
+invoke_agent triage_agent        AGENT   the whole run, ending with the final output
+├── chat google/gemma-4-e4b      LLM     first answer (failed a check)
+└── chat google/gemma-4-e4b      LLM     second answer, sent the validation errors
+```
+
+Three things make it fit with the rest of the tracing:
+
+- **Names.** Pydantic AI uses OpenTelemetry's standard `gen_ai.*` names.
+  Langfuse reads those directly. Phoenix needs OpenInference names, so
+  OpenInference's `OpenInferenceSpanProcessor` adds them to each Pydantic AI
+  span as it ends, before the spans are sent.
+- **No doubles.** Pydantic AI calls the OpenAI client inside its own `chat`
+  spans, so with the OpenAI instrumentor on, every call would appear twice.
+  `pydantic_ai=True` leaves the instrumentor off.
+- **Sessions.** Pydantic AI gives each run a conversation ID, which becomes
+  the span's `session.id`. Experiment 03 passes
+  `conversation_id=run.session_id`, so its cases share the run's session.
+  The user, tags and metadata come from `traced_run()` as usual, because the
+  `RunAttributes` processor adds them to every span, whoever creates it.
 
 ### Why the names live only in `tracing.py`
 
@@ -257,7 +286,8 @@ format.
 ```
                  TracerProvider  (resource: openinference.project.name = agentic-ai-course)
                  │
-spans ──────────►├── ExperimentAttributes   (adds experiment labels as each span starts)
+spans ──────────►├── RunAttributes          (adds traced_run()'s session, user, tags, metadata)
+                 ├── ExperimentAttributes   (adds experiment labels as each span starts)
                  │
                  ├── BatchSpanProcessor ──► OTLPSpanExporter ──► Phoenix   localhost:6006/v1/traces
                  │
@@ -271,6 +301,11 @@ spans ──────────►├── ExperimentAttributes   (adds ex
 - **Resource** describes who is sending the spans. Phoenix reads the
   `openinference.project.name` resource attribute to choose the project.
   Langfuse ignores it and uses the project that the API keys belong to.
+- **RunAttributes** sends nothing: it copies `traced_run()`'s labels onto
+  each span as it starts (see [sessions](#sessions-the-traces-of-one-run)).
+  With `pydantic_ai=True`, one more processor that sends nothing,
+  `OpenInferenceSpanProcessor`, comes after these two (see
+  [framework spans](#framework-spans-pydantic-ai)).
 - **ExperimentAttributes** sends nothing: it copies Langfuse's experiment
   labels onto each span as it starts (see
   [datasets and experiments](#datasets-and-experiments-comparing-runs)).
@@ -386,8 +421,9 @@ spans alike, gets four attributes:
   changed since the commit, so you can tell which code produced a trace.
 
 It works through OpenInference's `using_attributes()`, which keeps the
-values in the current context: the OpenAI instrumentor adds them to its
-spans, and `span()` adds them to ours.
+values in the current context. The `RunAttributes` span processor copies
+them onto every span as it starts, whoever creates it: our helpers, the
+OpenAI instrumentor, or a framework such as Pydantic AI.
 
 | | Phoenix | Langfuse |
 |---|---|---|

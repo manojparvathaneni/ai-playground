@@ -54,6 +54,7 @@ for example `LLM_MODEL=qwen/qwen3.6-35b-a3b`.
 |---|---|---|
 | 01 | [Tool calling](experiments/01_tool_calling/) | The agent loop: the model asks for tools, we run them, it answers. Traced in Phoenix and Langfuse. |
 | 02 | [Evaluation](experiments/02_evaluation/) | Scoring the agent on a set of questions, with the scores shown in Phoenix and Langfuse. |
+| 03 | [Pydantic AI](experiments/03_pydantic_ai/) | Structured output: Pydantic models check the model's reply, and a Pydantic AI agent retries with the errors. Traced with the framework's own spans. |
 
 To add one, see [Adding an experiment](docs/development.md#8-adding-an-experiment-step-by-step).
 Packages that only some experiments need go in a dependency group, so the

@@ -10,10 +10,12 @@ from opentelemetry.trace import StatusCode
 from ai_playground.llm import call_llm
 from ai_playground.tools import get_current_time, get_current_time_in_timezone
 from ai_playground.tracing import (
+    RunAttributes,
     SpanKind,
     experiment_context,
     experiment_item,
     git_commit,
+    instrument_pydantic_ai,
     langfuse_auth_header,
     langfuse_headers,
     make_exporters,
@@ -175,3 +177,32 @@ def test_experiment_labels_reach_every_span_of_an_item(span_exporter):
         assert by_name[name]["langfuse.experiment.item.root_observation_id"] == root_id
     assert by_name["eval: utc"]["langfuse.experiment.item.expected_output"] == "{}"
     assert not any(key.startswith("langfuse.") for key in by_name["after"])
+
+
+def test_pydantic_ai_spans_get_openinference_names_and_run_labels(settings):
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from pydantic_ai import Agent, ModelResponse, TextPart
+    from pydantic_ai.models.function import FunctionModel
+
+    # A pipeline of its own, set up like setup_tracing(pydantic_ai=True).
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(RunAttributes())
+    instrument_pydantic_ai(provider)
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    agent = Agent(FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("hi")])))
+    try:
+        with traced_run("demo", settings=settings) as run:
+            agent.run_sync("hello", conversation_id=run.session_id)
+    finally:
+        Agent.instrument_all(False)  # leave other tests untraced
+
+    kinds = {s.name.split()[0]: dict(s.attributes or {}) for s in exporter.get_finished_spans()}
+    assert kinds["invoke_agent"]["openinference.span.kind"] == "AGENT"
+    assert kinds["chat"]["openinference.span.kind"] == "LLM"
+    for attributes in kinds.values():
+        assert attributes["session.id"] == run.session_id
+        assert attributes["user.id"] == "test-user"
