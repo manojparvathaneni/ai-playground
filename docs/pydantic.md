@@ -681,6 +681,16 @@ print(strict["required"], strict["additionalProperties"])
 Every field becomes required, `tags` included even though it has a default,
 and extra keys are forbidden. The model always sends every field.
 
+**What the schema layer enforces depends on the provider.** Claude's
+structured output, for example, enforces types, `enum`, `anyOf` and required
+fields, but not number ranges (`minimum`, `maximum`), string lengths
+(`minLength`, `maxLength`) or most array limits (`maxItems`). Pydantic AI
+moves those into each field's description, as text like `{maxItems: 5}`, so
+the model reads them as a request, not a rule. In experiment 03, Claude
+Haiku once listed six questions where five were allowed. Your Pydantic
+validation is the only layer that checks every rule, which is why it runs
+after every reply, whatever the server promises.
+
 ## 11. TypeAdapter: validating things that aren't models
 
 Sometimes the model returns a bare list, or you want to validate against a
