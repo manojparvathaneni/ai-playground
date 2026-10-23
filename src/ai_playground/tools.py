@@ -6,16 +6,16 @@ into the description the model reads.
 """
 
 import inspect
-from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from types import FunctionType
 from zoneinfo import ZoneInfo
 
 from openai.types.responses import FunctionToolParam
 
-# A tool is any Python function. Callable[..., Any] means "a function that
-# takes any arguments and returns anything".
-Tool = Callable[..., Any]
+# A tool is any Python function written with "def". FunctionType is the type
+# of such functions; unlike other things you can call, they always have a
+# __name__, which becomes the tool's name.
+Tool = FunctionType
 
 
 # ---------------------------------------------------------------------------
