@@ -117,6 +117,10 @@ To stop: `docker compose down` (traces are kept), or `docker compose down -v`
 to delete them too. Without the `LANGFUSE_*` keys in `.env`, traces go to
 Phoenix only.
 
+To keep your traces and scores when moving to another machine, use
+`make backup` and `make restore`; see
+[where the data lives](docs/tracing.md#where-the-data-lives-and-moving-it-to-another-machine).
+
 ### How it fits together
 
 All tracing code lives in `src/ai_playground/tracing.py`:

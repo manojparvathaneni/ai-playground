@@ -387,6 +387,48 @@ Its secrets come from `.env`. On first start, the `LANGFUSE_INIT_*` settings
 create the organisation, project, user and API keys, so there's no sign-up
 step.
 
+### Where the data lives, and moving it to another machine
+
+Everything Phoenix and Langfuse store (traces, scores, the Langfuse user and
+API keys) is in six Docker **volumes**, named `ai-playground_<name>`:
+`phoenix_data` and five `langfuse_*` ones. A volume is storage Docker
+manages, kept when a container is removed or recreated. On macOS, Docker
+runs inside Colima's Linux virtual machine, so the volumes are on its disk
+image (`~/.colima/_lima/_disks/colima/datadisk`), not in this folder.
+
+| Command | Data |
+|---|---|
+| `docker compose down` | Kept |
+| `docker compose down -v` | Deleted (`-v` removes the volumes) |
+| `colima delete` | Deleted, along with everything else in Docker |
+
+None of it is in git, so on another machine you start with empty tools. To
+take it with you:
+
+```sh
+make backup                                     # on this machine
+# copy the new backups/<date-time>/ folder to the other machine, privately
+make restore BACKUP=backups/<date-time>        # on the other machine
+```
+
+[`backup.sh`](../docker/backup.sh) stops the containers, so no database is
+half-way through writing, packs each volume into a `.tar.gz` file, and
+starts them again. [`restore.sh`](../docker/restore.sh) replaces the volumes'
+contents with the backup's, after asking.
+
+Each backup also holds two other files:
+
+- **`.env`**, because Langfuse encrypts some data with `ENCRYPTION_KEY` and
+  `SALT`, and the databases expect the passwords they were created with.
+  With a different `.env`, the restored data can't be read, so the restore
+  stops and says so. The backup is a secret: never commit or share it.
+  `backups/` is ignored by git.
+- **`images.txt`**, the image versions. A database's files only work with
+  the version that wrote them, so the restore warns if the versions differ.
+
+You only need this for the history of past runs. The code, evaluation cases
+and graders are in git, so any run can be repeated anywhere.
+
 ## 10. Exercises
 
 Each one changes something small and shows how it appears in the trace. Run

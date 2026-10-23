@@ -171,3 +171,8 @@ would run them on a schedule or before each release, against a hosted model.
 
 Upgrade on a branch, and run `make check` and the evaluation before merging,
 so a breaking change in a new version shows up there and not in `main`.
+
+Run `make backup` before upgrading Phoenix or Langfuse. A new version may
+change its database to a format the old version can't read, and the backup
+is the only way back
+(see [where the data lives](tracing.md#where-the-data-lives-and-moving-it-to-another-machine)).

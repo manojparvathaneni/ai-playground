@@ -12,6 +12,9 @@ wheels/
 # Secrets
 .env
 
+# Backups of the Docker data (docker/backup.sh). They include .env.
+backups/
+
 # Tool caches
 .pytest_cache/
 .ruff_cache/
