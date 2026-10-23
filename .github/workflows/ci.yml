@@ -1,0 +1,26 @@
+# Runs the same checks as `make check` on every push and pull request, so
+# problems are caught before they reach main. Results appear in the
+# "Actions" tab on GitHub, and as a tick or cross next to each commit.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs uv, which then installs the Python version in .python-version.
+      - uses: astral-sh/setup-uv@v6
+
+      # --locked fails if uv.lock doesn't match pyproject.toml, instead of
+      # quietly updating it.
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run checks
+        run: make check

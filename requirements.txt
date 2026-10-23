@@ -1,6 +1,5 @@
 # Generated from uv.lock for tools that need a requirements file.
-# Do not edit by hand: change pyproject.toml, then run
-#   uv export --no-hashes --no-emit-project -o requirements.txt
+# Do not edit by hand: change pyproject.toml, then run `make requirements`.
 # With uv, just run `uv sync` instead.
 annotated-types==0.8.0
     # via pydantic
@@ -82,11 +81,15 @@ protobuf==7.36.2
     #   googleapis-common-protos
     #   opentelemetry-proto
 pydantic==2.14.1
-    # via openai
+    # via
+    #   openai
+    #   pydantic-settings
 pydantic-core==2.50.1
     # via pydantic
-python-dotenv==1.2.4
+pydantic-settings==2.16.1
     # via ai-playground
+python-dotenv==1.2.4
+    # via pydantic-settings
 requests==2.34.2
     # via
     #   opentelemetry-exporter-http-transport
@@ -107,9 +110,12 @@ typing-extensions==4.16.0
     #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
     #   typing-inspection
 typing-inspection==0.4.4
-    # via pydantic
+    # via
+    #   pydantic
+    #   pydantic-settings
 urllib3==2.8.0
     # via requests
 wrapt==2.5.1
