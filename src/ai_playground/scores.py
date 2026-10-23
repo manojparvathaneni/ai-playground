@@ -12,6 +12,8 @@ Once sent, you can filter traces by score in both tools (for example, show
 only the failures) and see the explanation next to each trace.
 """
 
+import time
+import urllib.error
 from typing import Any
 
 from opentelemetry import trace
@@ -61,6 +63,24 @@ def langfuse_scores(results: list[Result]) -> list[dict[str, Any]]:
     ]
 
 
+def send_phoenix_annotations(settings: Settings, body: dict[str, Any], attempts: int = 5) -> None:
+    """Send annotations to Phoenix, waiting for traces it hasn't saved yet.
+
+    Phoenix saves incoming spans in the background, a moment after accepting
+    them, and answers 404 Not Found for an annotation on a trace it hasn't
+    saved. So on a 404, wait a second and try again.
+    """
+    url = f"{settings.phoenix_collector_endpoint}/v1/trace_annotations?sync=true"
+    for attempt in range(1, attempts + 1):
+        try:
+            post_json(url, body)
+            return
+        except urllib.error.HTTPError as error:
+            if error.code != 404 or attempt == attempts:
+                raise
+            time.sleep(1)
+
+
 def publish_scores(results: list[Result], settings: Settings | None = None) -> None:
     """Attach each result's grade to its trace in Phoenix and in Langfuse.
 
@@ -80,10 +100,7 @@ def publish_scores(results: list[Result], settings: Settings | None = None) -> N
         provider.force_flush()
 
     try:
-        post_json(
-            f"{settings.phoenix_collector_endpoint}/v1/trace_annotations?sync=true",
-            phoenix_annotations(results),
-        )
+        send_phoenix_annotations(settings, phoenix_annotations(results))
     except Exception as error:
         print(f"Couldn't send scores to Phoenix: {error}")
 

@@ -41,6 +41,15 @@ failed checks back to the model until it gets a valid one.
   swaps it in, and `ALLOW_MODEL_REQUESTS = False` makes any real call fail.
   The tests check each validator, a retry that fixes the answer, and the
   agent giving up after two retries.
+- **Valid isn't right** ([`evaluate.py`](evaluate.py),
+  [`triage_grader.py`](triage_grader.py)): validators check that a triage is
+  consistent, not that it's correct. The evaluation compares each triage
+  with what a support engineer would decide, with the same tools as
+  experiment 02: a session per run, the `triage-cases` dataset, and an
+  experiment per run in Phoenix and Langfuse.
+- **Repair, don't just reject.** A validator can fix a value as well as
+  reject it. Facts the code can read from the case (such as "4,000 users")
+  are filled in rather than sent back to the model.
 - **Framework tracing.** `setup_tracing(pydantic_ai=True)` records Pydantic
   AI's own spans, so a retried case shows as one `invoke_agent` span with two
   `chat` calls under it (see
@@ -57,37 +66,69 @@ a model server like the other experiments (LM Studio with
 uv run python experiments/03_pydantic_ai/main.py
 ```
 
-It prints each case's triage, how many requests it took, a tally and the
-session ID. In Phoenix or Langfuse, open the session to see the four runs;
+To measure how often the triage is right, run the evaluation:
+
+```sh
+uv run python experiments/03_pydantic_ai/evaluate.py
+```
+
+`main.py` prints each case's triage, how many requests it took, a tally and
+the session ID. In Phoenix or Langfuse, open the session to see the four runs;
 for a retried case, open the second `chat` span to read the validation
 errors Pydantic AI sent back.
 
 ## What it found
 
-In the first runs with `google/gemma-4-e4b`, all four cases ended valid:
-three on the first try, and the invoice question ("THIS IS URGENT SEV A!!!
-How do I export last month's invoices to CSV?") after one retry.
+**Valid isn't right.** In the first runs, all four cases ended with a
+valid triage, but several were wrong: the accountant's share was filed under
+`identity` at severity B, the vague database case got a made-up
+`affected_users: 1`, and the how-to question was severity B because the
+customer wrote "SEV A". The validators only catch broken rules.
 
-Valid isn't the same as right, though. The validators catch broken rules,
-not poor judgement, and these passed them:
+So [`evaluate.py`](evaluate.py) grades each triage against the expected
+answer: the four cases, plus one held-out case (60 users who can't reach
+the VPN, which really is severity B) to check that fixes don't break cases
+they weren't aimed at. Each set of results is three runs with
+`google/gemma-4-e4b`, because one run can pass or fail by luck:
 
-- The accountant who can't map a share was filed under `identity`, severity
-  B. It's a single user with a networking or storage error, so C fits better.
-- The vague "database feels slow" case got `affected_users: 1`, a number the
-  case never states.
-- The invoice question was severity B, not C: the customer's "SEV A" label
-  still pulled it up a level.
+| Version | Runs (of 5) | Average |
+|---|---|---|
+| The validators from the notebook | 2, 1, 3 | 40% |
+| Stricter rules: severity C for a single user or a question, C never escalates, `affected_users` must match the case | 3, 2, 1 | 40% |
+| Facts filled in by code, and feedback that names the wrong field | 3, 3, 2 | 53% |
 
-Catching these takes expected answers to compare against, which is what an
-evaluation does (see [experiment 02](../02_evaluation/)).
+What the middle row taught:
+
+- **A small model often ignores feedback.** Replaying a failing case showed
+  the model sending exactly the same answer after each retry. A rule it
+  can't satisfy turns a wrong-but-valid answer into a run that gives up
+  after its retries.
+- **The message has to point at the field that's wrong.** "single_user must
+  be severity C" made sense for a how-to question, but for a 4,000-user
+  outage labelled `single_user`, the impact was wrong, not the severity.
+
+So the last version stops asking the model for facts the code can read: if
+the case says "4,000 users", `affected_users_matches_case()` fills it in,
+and then a precise rule can say that `customer_impact` can't be
+`single_user`. Invented numbers are still rejected, which the model can fix
+by using null.
+
+What's still wrong is judgement: the invoice question sometimes stays at A
+(the model changes the impact instead of the severity), the vague database
+case sometimes asks no questions, and the share is often filed under
+`identity`. More rules won't fix judgement in a 4B model. The next step is
+a bigger one: `qwen/qwen3.6-35b-a3b` is in LM Studio, but this machine
+couldn't load it alongside Gemma (LM Studio stopped it to avoid running out
+of memory). Unload Gemma first, then run
+`LLM_MODEL=qwen/qwen3.6-35b-a3b uv run python experiments/03_pydantic_ai/evaluate.py`
+and compare the experiments on `triage-cases`.
 
 ## Try next
 
-- **Turn it into an evaluation.** Give each case an expected severity and
-  product area, grade the triage against them with `run_evaluation()`, and
-  compare models on the dataset in Phoenix or Langfuse.
-- **Add a rule.** Make `affected_users` fail when the case text has no
-  number in it, and see whether the retry fixes the "database" case.
+- **Compare models.** Run the evaluation with another `LLM_MODEL` and compare
+  the experiments on the `triage-cases` dataset, case by case.
+- **Add a case.** A case that's hard for the current rules: a group outage
+  described without a number, or a question that mentions an error code.
 - **Change the output mode.** Swap `NativeOutput` for `ToolOutput` (the
   schema becomes a tool the model must call) or `PromptedOutput` (the schema
   goes in the prompt), and compare how many retries each needs.

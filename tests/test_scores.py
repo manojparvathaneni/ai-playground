@@ -1,5 +1,7 @@
 """Tests for sending eval scores to Phoenix and Langfuse (ai_playground/scores.py)."""
 
+import urllib.error
+from email.message import Message
 from unittest.mock import patch
 
 from ai_playground.evals import Case, Grade, Result
@@ -86,3 +88,27 @@ def test_a_tool_that_cant_be_reached_doesnt_raise(settings, capsys):
         publish_scores([passed_result()], settings)
 
     assert "Couldn't send scores to Phoenix: connection refused" in capsys.readouterr().out
+
+
+def http_error(code):
+    return urllib.error.HTTPError("http://phoenix.test", code, "error", Message(), None)
+
+
+def test_phoenix_is_asked_again_until_it_has_saved_the_trace(settings):
+    replies = [http_error(404), http_error(404), None]  # not saved yet, twice
+    with (
+        patch("ai_playground.scores.post_json", side_effect=replies) as post_json,
+        patch("ai_playground.scores.time.sleep") as sleep,
+    ):
+        publish_scores([passed_result()], settings)
+
+    assert post_json.call_count == 3
+    assert sleep.call_count == 2
+
+
+def test_other_phoenix_errors_are_not_retried(settings, capsys):
+    with patch("ai_playground.scores.post_json", side_effect=http_error(500)) as post_json:
+        publish_scores([passed_result()], settings)
+
+    assert post_json.call_count == 1
+    assert "Couldn't send scores to Phoenix: HTTP Error 500" in capsys.readouterr().out
