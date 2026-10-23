@@ -72,8 +72,8 @@ in UTC?"* The trace looks like this:
 agent                                   AGENT   the whole run
 ├── turn 1                              CHAIN   first trip to the model
 │   ├── Response                        LLM     model asks for two tools
-│   ├── get_current_time                TOOL    returns "23:56:14"
-│   └── get_current_time_in_timezone    TOOL    {"timezone": "UTC"} -> "03:56:14"
+│   ├── get_current_time                TOOL    returns "23:56:14 (11:56 PM)"
+│   └── get_current_time_in_timezone    TOOL    {"timezone": "UTC"} -> "03:56:14 (3:56 AM)"
 └── turn 2                              CHAIN   second trip to the model
     └── Response                        LLM     model writes the final answer
 ```
@@ -192,7 +192,7 @@ are defined once, at the top of the helpers section in `tracing.py`:
 |---|---|---|
 | `openinference.span.kind` | `AGENT`, `CHAIN`, `TOOL`, `LLM` | What kind of step this is. Tools use it for the label and icon. |
 | `input.value` | the prompt; `{"timezone":"UTC"}` | What went into the step. |
-| `output.value` | the final answer; `"03:56:14"` | What came out of the step. |
+| `output.value` | the final answer; `"03:56:14 (3:56 AM)"` | What came out of the step. |
 | `tool.name` | `get_current_time` | Which tool ran (tool spans only). |
 
 The span kinds we use:
@@ -399,11 +399,16 @@ find the newest trace in both tools.
    was sent in turn 2. Then find the same things in Langfuse.
 
 2. **Find who made a mistake.** Models get things wrong even when their
-   tools are right. In one test run, `get_current_time` returned `00:06:43`
-   (just after midnight) and the model answered "12:06 PM". The trace shows
-   it at once: the tool span's output is correct, so the error is in the
-   model's final `Response`. Whenever an answer looks wrong, compare each tool
-   span's output with what the model said.
+   tools are right. When the tools returned only a 24-hour time,
+   `get_current_time` once returned `00:06:43` (just after midnight) and the
+   model answered "12:06 PM". The trace showed it at once: the tool span's
+   output was correct, so the error was in the model's final `Response`.
+   That's why the tools now also state AM or PM (see
+   [experiment 02](../experiments/02_evaluation/README.md#what-it-found)).
+   Whenever an answer looks wrong, compare each tool span's output with what
+   the model said. To see the old mistake again, make `format_time` in
+   `tools.py` return only the 24-hour time, and ask for the time in a city
+   where it's between midnight and noon.
 
 3. **See an error.** In the experiment's `main.py`, change the question to ask for the time on
    `Mars/Olympus`. The tool raises an error for the unknown timezone. In the

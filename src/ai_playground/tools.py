@@ -120,7 +120,11 @@ def make_tool_schema(tool: Tool) -> FunctionToolParam:
 #     "get_current_time": {
 #         "type": "function",
 #         "name": "get_current_time",
-#         "description": "Get the current local time.",
+#         "description": (
+#             "Get the current time where the user is, in their own timezone.\n\n"
+#             'Use this when the user asks for the time "here", the local time, or the\n'
+#             "time without naming a place."
+#         ),
 #         "parameters": {
 #             "type": "object",
 #             "properties": {},
