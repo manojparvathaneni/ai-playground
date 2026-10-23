@@ -1,0 +1,27 @@
+[project]
+name = "ai-playground"
+version = "0.1.0"
+description = "A playground for learning to build AI applications, from the basics to advanced."
+readme = "README.md"
+requires-python = ">=3.15"
+
+# Packages every experiment uses. Keep this list short: libraries that only
+# some experiments need go in a dependency group below instead.
+dependencies = [
+    "openai>=3.37.0",
+    "openinference-instrumentation-openai>=0.1.65",
+    "opentelemetry-api>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-sdk>=1.45.1",
+    "python-dotenv>=1.2.4",
+]
+
+# Extra packages for particular experiments, installed only when asked for.
+# Add one with:      uv add --group <name> <package>
+# Install it with:   uv sync --group <name>
+# For example, a "rag" group for retrieval experiments, or "notebooks" for Jupyter.
+[dependency-groups]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"

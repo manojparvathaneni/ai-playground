@@ -1,0 +1,132 @@
+"""Tools the model can call, and how they are described to it.
+
+To give the model a new tool, write a function with a docstring and type
+hints, and pass it in call_llm(..., tools=[...]). make_tool_schema() turns it
+into the description the model reads.
+"""
+
+from datetime import datetime
+import inspect
+from zoneinfo import ZoneInfo
+
+
+# ---------------------------------------------------------------------------
+# Example tools: plain Python functions the model is allowed to call.
+# The docstring is what the model reads to decide when to use each tool.
+# ---------------------------------------------------------------------------
+
+def get_current_time() -> str:
+    """Get the current local time."""
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def get_current_time_in_timezone(timezone: str) -> str:
+    """Get the current time in an IANA timezone, such as UTC or Asia/Tokyo."""
+    return datetime.now(ZoneInfo(timezone)).strftime("%H:%M:%S")
+
+
+# ---------------------------------------------------------------------------
+# Describing tools to the model
+# ---------------------------------------------------------------------------
+
+# How each Python type is written in JSON Schema.
+JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean"}
+
+
+def make_tool_schema(tool) -> dict:
+    """Describe a Python function in the JSON format the model understands.
+
+    For example, for this function:
+
+        def get_current_time_in_timezone(timezone: str) -> str:
+            \"\"\"Get the current time in an IANA timezone, such as UTC or Asia/Tokyo.\"\"\"
+
+    it returns:
+
+        {
+            "type": "function",
+            "name": "get_current_time_in_timezone",
+            "description": "Get the current time in an IANA timezone, such as UTC or Asia/Tokyo.",
+            "parameters": {
+                "type": "object",
+                "properties": {"timezone": {"type": "string"}},
+                "required": ["timezone"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        }
+    """
+    # inspect.signature() lets Python look at a function's own definition.
+    # Its .parameters holds one entry per argument. For the example above
+    # that is just "timezone", and parameter.annotation is its type hint, str.
+    parameters = inspect.signature(tool).parameters
+
+    properties = {}  # each argument's name and JSON type
+    required = []    # names of the arguments the model must fill in
+    for name, parameter in parameters.items():
+        python_type = parameter.annotation          # e.g. str
+        json_type = JSON_TYPES[python_type]         # e.g. "string"
+        properties[name] = {"type": json_type}
+        required.append(name)
+
+    return {
+        "type": "function",
+        "name": tool.__name__,
+        "description": tool.__doc__,
+        "parameters": {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False,
+        },
+        "strict": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# For comparison: the manual way (not used)
+#
+# Without make_tool_schema, we would write every schema by hand, like this:
+#
+# TOOL_SCHEMAS = {
+#     "get_current_time": {
+#         "type": "function",
+#         "name": "get_current_time",
+#         "description": "Get the current local time.",
+#         "parameters": {
+#             "type": "object",
+#             "properties": {},
+#             "required": [],
+#             "additionalProperties": False,
+#         },
+#         "strict": True,
+#     },
+#     "get_current_time_in_timezone": {
+#         "type": "function",
+#         "name": "get_current_time_in_timezone",
+#         "description": "Get the current time in an IANA timezone, such as UTC or Asia/Tokyo.",
+#         "parameters": {
+#             "type": "object",
+#             "properties": {"timezone": {"type": "string"}},
+#             "required": ["timezone"],
+#             "additionalProperties": False,
+#         },
+#         "strict": True,
+#     },
+# }
+#
+# and call_llm would look schemas up with TOOL_SCHEMAS[tool.__name__].
+#
+# Why make_tool_schema is better:
+#   1. Less typing. Each tool here needs about 12 lines of schema; the
+#      automatic version needs none.
+#   2. Nothing to keep in sync. The name, description and arguments are
+#      written twice (once in the function, once in the schema). If you
+#      rename an argument in the function but forget the schema, the model
+#      sends the old name and the tool call crashes.
+#   3. Adding a tool is one step. Write the function and pass it in
+#      tools=[...]. The manual way also needs a new TOOL_SCHEMAS entry.
+#
+# The manual way is still worth seeing once: it shows exactly what the model
+# receives, and it is what make_tool_schema builds for you.
+# ---------------------------------------------------------------------------

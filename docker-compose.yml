@@ -1,0 +1,32 @@
+# Observability tools for this project, all running locally in Docker.
+#
+#   Phoenix   http://localhost:6006
+#   Langfuse  http://localhost:3000
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down        (add -v to also delete all traces)
+#
+# Settings and secrets come from the .env file next to this one.
+
+# Containers and data volumes are named after this, not after the folder,
+# so renaming the folder doesn't lose your traces.
+name: ai-playground
+
+include:
+  # Langfuse needs six containers (web, worker, Postgres, ClickHouse, Redis,
+  # MinIO), so it keeps its official compose file in its own folder.
+  - docker/langfuse/docker-compose.yml
+
+services:
+  phoenix:
+    image: arizephoenix/phoenix:version-20
+    restart: always
+    ports:
+      - 127.0.0.1:6006:6006   # web UI, and where our traces are sent (OTLP over HTTP)
+    environment:
+      PHOENIX_WORKING_DIR: /mnt/data
+    volumes:
+      - phoenix_data:/mnt/data  # keeps traces when the container restarts
+
+volumes:
+  phoenix_data:
