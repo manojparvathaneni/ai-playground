@@ -3,8 +3,11 @@
 A model triages customer support cases into a record an engineer can act
 on: product area, severity A/B/C, impact, summary, error codes, next steps,
 escalation, confidence and open questions. [Pydantic](https://pydantic.dev)
-checks every reply, and a [Pydantic AI](https://ai.pydantic.dev) agent sends
-failed checks back to the model until it gets a valid one.
+checks every reply, and a [Pydantic AI](https://pydantic.dev/docs/ai/core-concepts/agent/)
+agent sends failed checks back to the model until it gets a valid one.
+
+New to Pydantic? Read [docs/pydantic.md](../../docs/pydantic.md) first: it
+covers every idea used here, with examples and exercises.
 
 ## What it shows
 
