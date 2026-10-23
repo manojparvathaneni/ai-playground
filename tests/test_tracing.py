@@ -31,8 +31,8 @@ def test_agent_run_produces_the_expected_tree(settings, model, span_exporter):
         text_answer("It is noon."),
     ]
 
-    with patch("ai_playground.tools.datetime") as datetime:
-        datetime.now.return_value.strftime.return_value = "12:00:00"
+    with patch("ai_playground.tools.format_time") as format_time:
+        format_time.return_value = "12:00:00"
         call_llm("Time?", tools=[get_current_time, get_current_time_in_timezone], settings=settings)
 
     # The model calls themselves are traced by the OpenAI instrumentor, which
@@ -52,8 +52,8 @@ def test_spans_record_inputs_and_outputs(settings, model, span_exporter):
         text_answer("It is noon."),
     ]
 
-    with patch("ai_playground.tools.datetime") as datetime:
-        datetime.now.return_value.strftime.return_value = "12:00:00"
+    with patch("ai_playground.tools.format_time") as format_time:
+        format_time.return_value = "12:00:00"
         call_llm("Time?", tools=[get_current_time_in_timezone], settings=settings)
 
     by_name = {s.name: s.attributes for s in span_exporter.get_finished_spans()}

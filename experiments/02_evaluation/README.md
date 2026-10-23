@@ -61,12 +61,25 @@ here?") failed: instead of calling `get_current_time`, the model asked what
 "here" meant. That's a real weakness of the agent, found by the evaluation,
 not a bug in the code.
 
+Asking that one question 10 times showed it was worse than one run
+suggested: only 2 of 10 answers called the tool. Two changes in
+[`tools.py`](../../src/ai_playground/tools.py) fixed it:
+
+1. **The tool's description.** `get_current_time` said only "Get the current
+   local time." It now says it gives the time where the user is, and to use
+   it for "here" or when no place is named. The `local` question went from
+   2/10 to 10/10.
+2. **The tool's output.** The full evaluation then showed a second failure,
+   seen at 1 AM: the tool returned `01:13:00` and the model said "1:13 PM".
+   The tools now return both clocks, `01:13:00 (1:13 AM)`, so there is
+   nothing to guess.
+
+After both changes, three runs in a row passed 6/6. The lesson: the model
+only knows what the tool's description and output tell it, so they are part
+of the prompt.
+
 ## Try next
 
-- **Fix the failure.** Change `get_current_time`'s docstring in
-  [`tools.py`](../../src/ai_playground/tools.py) to say it gives the time
-  "here, where the user is", and run the evaluation again. Did the `local`
-  case pass? Did any other case break?
 - **Compare models.** Set `LLM_MODEL` in `.env` to another model and compare
   pass rates.
 - **Add cases.** Add questions the agent might get wrong, such as a city with
