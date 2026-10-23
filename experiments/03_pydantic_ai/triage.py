@@ -22,7 +22,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from pydantic_ai import Agent, ModelRetry, NativeOutput, RunContext
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from ai_playground.config import Settings
@@ -97,23 +97,12 @@ class TriageValidated(TriageSchema):
         return codes
 
     @model_validator(mode="after")
-    def severity_matches_impact(self) -> Self:
-        # The severity definitions above, as rules.
-        if self.customer_impact in ("single_user", "question") and self.severity != "C":
-            raise ValueError(
-                f"customer_impact '{self.customer_impact}' must be severity C: C covers a "
-                "single user or a how-to question, whatever label the customer used"
-            )
-        if self.customer_impact == "outage" and self.severity == "C":
-            raise ValueError("an outage cannot be severity C")
-        if self.severity == "A" and not self.needs_escalation:
-            raise ValueError("severity A cases must set needs_escalation to true")
-        if self.severity == "C" and self.needs_escalation:
-            raise ValueError("severity C cases must set needs_escalation to false")
-        return self
-
-    @model_validator(mode="after")
     def affected_users_matches_case(self, info: ValidationInfo) -> Self:
+        # Runs before severity_matches_impact(): Pydantic runs model
+        # validators in the order they're written and stops at the first that
+        # fails, and this one can say precisely when the impact is the wrong
+        # field. Feedback that names the wrong field is feedback the model
+        # can't act on.
         source = (info.context or {}).get("source_text")
         if source is None:
             return self
@@ -132,6 +121,24 @@ class TriageValidated(TriageSchema):
                 f"customer_impact is 'single_user', but the case says {self.affected_users} "
                 "users are affected; choose 'outage' or 'degraded' instead"
             )
+        return self
+
+    @model_validator(mode="after")
+    def severity_matches_impact(self) -> Self:
+        # The severity definitions above, as rules.
+        if self.customer_impact in ("single_user", "question") and self.severity != "C":
+            raise ValueError(
+                f"severity {self.severity} and customer_impact '{self.customer_impact}' don't "
+                "fit together: C covers a single user or a how-to question, whatever label "
+                "the customer used. Fix whichever is wrong: the severity, or the impact if "
+                "more than one user is affected"
+            )
+        if self.customer_impact == "outage" and self.severity == "C":
+            raise ValueError("an outage cannot be severity C")
+        if self.severity == "A" and not self.needs_escalation:
+            raise ValueError("severity A cases must set needs_escalation to true")
+        if self.severity == "C" and self.needs_escalation:
+            raise ValueError("severity C cases must set needs_escalation to false")
         return self
 
     @model_validator(mode="after")
@@ -218,7 +225,13 @@ def make_model(settings: Settings | None = None) -> OpenAIChatModel:
     if settings is None:
         settings = Settings()
     provider = OpenAIProvider(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
-    return OpenAIChatModel(settings.llm_model, provider=provider)
+    model_settings = OpenAIChatModelSettings()
+    if settings.llm_reasoning_effort is not None:
+        # See llm_reasoning_effort in config.py: without "none", a thinking
+        # model's answer arrives as reasoning, the reply is empty, and every
+        # retry gets "Please return text." and fails the same way.
+        model_settings["openai_reasoning_effort"] = settings.llm_reasoning_effort
+    return OpenAIChatModel(settings.llm_model, provider=provider, settings=model_settings)
 
 
 # ---------------------------------------------------------------------------

@@ -918,6 +918,23 @@ Fix the errors and try again.
 When the retries run out, the run raises `UnexpectedModelBehavior: Exceeded
 maximum output retries (2)`.
 
+### When retries can't help
+
+A retry only helps if the prompt tells the model something it can act on.
+Two ways it can't, both seen in experiment 03:
+
+- **The answer never reaches Pydantic AI.** A thinking model such as Qwen 3
+  can have its whole JSON answer filed as "thinking" by LM Studio, with an
+  empty reply. Pydantic AI then sends a generic "Please return text.", the
+  model repeats itself, and every retry is wasted. If the retry prompts in
+  `capture_run_messages()` say "Please return text.", look at the response
+  parts: a `thinking` part with the JSON in it is this problem. The fix is
+  turning thinking off (`openai_reasoning_effort="none"`, or
+  `LLM_REASONING_EFFORT=none` in this project).
+- **The feedback names the wrong field.** Model validators run in the order
+  they're written, and the first to fail is the one the model hears about.
+  Put the checks that can say precisely what's wrong first.
+
 ### Validation context
 
 `validation_context` passes data to the output type's validators (section 8),
@@ -1043,6 +1060,13 @@ turned the triage into an evaluation. Four lessons from it:
    precisely "the impact can't be single_user when 4,000 users are affected".
    Pointing at the field that's actually wrong gives the model something it
    can fix.
+5. **The order of validators decides the feedback.** Pydantic stops at the
+   first model validator that fails. When a vaguer check ran first, the
+   precise one never did, and Qwen spent its retries refusing a wrong
+   suggestion. Running the precise check first fixed it on the first retry.
+6. **Check what the model actually returned before blaming the rules.** A
+   thinking model's answer can arrive as reasoning with an empty reply, and
+   no number of retries will fix that (section 13).
 
 ## Reference
 
