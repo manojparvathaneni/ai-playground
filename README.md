@@ -66,6 +66,8 @@ base environment stays small; see [Dependencies](docs/development.md#6-dependenc
   settings, dependencies, and the everyday routine.
 - [docs/tracing.md](docs/tracing.md): traces and spans, how they reach
   Phoenix and Langfuse, scores, and exercises.
+- [docs/pydantic.md](docs/pydantic.md): Pydantic and Pydantic AI for model
+  output, with examples and exercises. Read it before experiment 03.
 
 ## Tracing
 
