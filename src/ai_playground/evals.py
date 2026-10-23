@@ -66,6 +66,8 @@ class Result:
     # When the case started and finished, for experiment runs (datasets.py).
     started_at: datetime | None = None
     ended_at: datetime | None = None
+    # The error, if the application raised one instead of answering.
+    error: str | None = None
 
 
 @dataclass
@@ -132,12 +134,14 @@ def run_case(
         else:
             item = nullcontext()
         with item:
+            error = None
             try:
                 answer = application(case.question)
                 grade = None
-            except Exception as error:  # one broken case shouldn't stop the whole run
+            except Exception as raised:  # one broken case shouldn't stop the whole run
                 answer = ""
-                grade = Grade(False, f"The application raised {type(error).__name__}: {error}")
+                error = f"{type(raised).__name__}: {raised}"
+                grade = Grade(False, f"The application raised {error}")
 
             with span("grade", SpanKind.EVALUATOR, answer) as grade_span:
                 if grade is None:
@@ -148,7 +152,9 @@ def run_case(
 
         set_output(case_span, answer)
         trace_id, span_id = ids_of(case_span)
-    return Result(case, answer, grade, trace_id, span_id, started_at, datetime.now(UTC))
+    return Result(
+        case, answer, grade, trace_id, span_id, started_at, datetime.now(UTC), error=error
+    )
 
 
 def ids_of(current: Span) -> tuple[str | None, str | None]:

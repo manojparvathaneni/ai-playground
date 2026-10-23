@@ -37,6 +37,7 @@ def test_a_case_that_raises_fails_without_stopping_the_run():
 
     assert [r.grade.passed for r in results] == [False, True]
     assert "RuntimeError: model server down" in results[0].grade.explanation
+    assert [r.error for r in results] == ["RuntimeError: model server down", None]
 
 
 def test_cases_are_traced_with_their_grade(span_exporter):

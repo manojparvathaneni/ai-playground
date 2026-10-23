@@ -111,6 +111,7 @@ def test_phoenix_run_and_evaluation():
         "start_time": START.astimezone().isoformat(),
         "end_time": END.astimezone().isoformat(),
         "trace_id": "a" * 32,
+        "error": None,
     }
     assert phoenix_evaluation("run-1", result(CASES[0], passed=False))["result"] == {
         "label": "fail",

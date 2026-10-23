@@ -44,11 +44,39 @@ def test_a_good_triage_passes():
     assert validate(GOOD).severity == "A"
 
 
+def test_a_count_in_the_case_is_filled_in_when_missing():
+    assert validate({**GOOD, "affected_users": None}).affected_users == 4000
+
+
+def test_a_number_written_as_a_word_counts():
+    text = "One of our accountants cannot map the finance share."
+    one_user = {
+        **GOOD,
+        "severity": "C",
+        "customer_impact": "single_user",
+        "affected_users": 1,
+        "error_codes": [],
+        "needs_escalation": False,
+    }
+
+    assert TriageValidated.model_validate(one_user, context={"source_text": text})
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
         ({"error_codes": ["AADSTS50076", "AADSTS700016"]}, "not found in the case text"),
-        ({"customer_impact": "single_user"}, "severity A conflicts with customer_impact"),
+        ({"customer_impact": "single_user"}, "'single_user' must be severity C"),
+        ({"customer_impact": "question", "severity": "B"}, "'question' must be severity C"),
+        (
+            {"customer_impact": "single_user", "severity": "C"},
+            "severity C cases must set needs_escalation to false",
+        ),
+        ({"affected_users": 400}, "never states that number"),
+        (
+            {"customer_impact": "single_user", "severity": "C", "needs_escalation": False},
+            "the case says 4000 users are affected",
+        ),
         ({"needs_escalation": False}, "must set needs_escalation to true"),
         ({"confidence": 0.4}, "missing_info is empty"),
         ({"severity": "P1"}, "Input should be 'A', 'B' or 'C'"),
@@ -105,7 +133,7 @@ def test_a_failed_check_is_sent_back_and_the_model_corrects_itself():
 
     assert output.severity == "C"
     (prompt,) = retry_prompts(messages)
-    assert "severity A conflicts with customer_impact 'question'" in prompt
+    assert "customer_impact 'question' must be severity C" in prompt
 
 
 def test_the_unified_plan_rule_uses_the_deps():

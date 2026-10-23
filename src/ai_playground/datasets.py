@@ -136,6 +136,8 @@ def phoenix_run(example_node_id: str, result: Result) -> dict[str, Any]:
         "start_time": iso(result.started_at),
         "end_time": iso(result.ended_at),
         "trace_id": result.trace_id,
+        # Phoenix counts a run with an error as failed, not successful.
+        "error": result.error,
     }
 
 

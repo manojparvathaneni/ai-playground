@@ -16,6 +16,7 @@ triage_agent runs the loop: ask the model, validate the reply, and when a
 check fails, send the errors back and ask again, up to two more times.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Literal, Self
 
@@ -39,7 +40,13 @@ class TriageSchema(BaseModel):
 
     product_area: Literal[
         "identity", "networking", "storage", "compute", "database", "billing", "other"
-    ]
+    ] = Field(
+        description="identity: sign-in, accounts, MFA, permissions. "
+        "networking: VPN, DNS, connectivity, and network paths or shares that can't be "
+        "reached. storage: disks, file and blob data, capacity, backups. "
+        "compute: virtual machines and containers. database: database servers and queries. "
+        "billing: invoices, payments, subscriptions."
+    )
     severity: Literal["A", "B", "C"] = Field(
         description="A: production down or broad business impact. B: degraded service or a "
         "meaningful group affected. C: single user, how-to question, or advisory."
@@ -60,7 +67,10 @@ class TriageSchema(BaseModel):
     next_steps: list[str] = Field(
         min_length=1, max_length=5, description="Concrete actions for the engineer."
     )
-    needs_escalation: bool = Field(description="Must be true for severity A.")
+    needs_escalation: bool = Field(
+        description="True for severity A. False for severity C. For severity B, true only "
+        "when the customer's plan calls for it."
+    )
     confidence: float = Field(
         ge=0.0, le=1.0, description="How sure you are of severity and product_area."
     )
@@ -88,12 +98,40 @@ class TriageValidated(TriageSchema):
 
     @model_validator(mode="after")
     def severity_matches_impact(self) -> Self:
-        if self.severity == "A" and self.customer_impact in ("single_user", "question"):
-            raise ValueError(f"severity A conflicts with customer_impact '{self.customer_impact}'")
+        # The severity definitions above, as rules.
+        if self.customer_impact in ("single_user", "question") and self.severity != "C":
+            raise ValueError(
+                f"customer_impact '{self.customer_impact}' must be severity C: C covers a "
+                "single user or a how-to question, whatever label the customer used"
+            )
         if self.customer_impact == "outage" and self.severity == "C":
             raise ValueError("an outage cannot be severity C")
         if self.severity == "A" and not self.needs_escalation:
             raise ValueError("severity A cases must set needs_escalation to true")
+        if self.severity == "C" and self.needs_escalation:
+            raise ValueError("severity C cases must set needs_escalation to false")
+        return self
+
+    @model_validator(mode="after")
+    def affected_users_matches_case(self, info: ValidationInfo) -> Self:
+        source = (info.context or {}).get("source_text")
+        if source is None:
+            return self
+        stated = COUNTED_USERS.search(source)
+        if self.affected_users is None and stated:
+            # A fact the code can read from the case: fill it in rather than
+            # asking the model again. Validators can repair, not just reject.
+            self.affected_users = int(stated.group(1).replace(",", ""))
+        elif self.affected_users is not None and self.affected_users not in numbers_in(source):
+            raise ValueError(
+                f"affected_users is {self.affected_users}, but the case never states that "
+                "number; use null unless the case gives one"
+            )
+        if self.customer_impact == "single_user" and (self.affected_users or 1) > 1:
+            raise ValueError(
+                f"customer_impact is 'single_user', but the case says {self.affected_users} "
+                "users are affected; choose 'outage' or 'degraded' instead"
+            )
         return self
 
     @model_validator(mode="after")
@@ -104,6 +142,23 @@ class TriageValidated(TriageSchema):
                 "list what you need to know"
             )
         return self
+
+
+# Numbers written as words, for cases like "one of our accountants".
+NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "ten": 10}
+# A count of people, such as "4,000 users" or "60 people".
+COUNTED_USERS = re.compile(r"\b(\d[\d,]*) (?:users|people|staff|employees)\b", re.IGNORECASE)
+
+
+def numbers_in(text: str) -> set[int]:
+    """Every number written in the text, in digits ("4,000") or as a word ("one")."""
+    digits = {int(found.replace(",", "")) for found in re.findall(r"\d[\d,]*", text)}
+    words = {
+        value
+        for word, value in NUMBER_WORDS.items()
+        if re.search(rf"\b{word}\b", text, re.IGNORECASE)
+    }
+    return digits | words
 
 
 # ---------------------------------------------------------------------------
@@ -170,20 +225,24 @@ def make_model(settings: Settings | None = None) -> OpenAIChatModel:
 # Cases to try
 # ---------------------------------------------------------------------------
 
-CASES = [
-    (
+# Each case's name, its text, and the customer's support plan.
+CASES = {
+    "tenant outage": (
         "Since 09:40 UTC all 4,000 users in our tenant get AADSTS50076 when signing in to "
         "Outlook and Teams. We changed a Conditional Access policy last night. Production is down.",
         "unified",
     ),
-    (
+    "one user's share": (
         "One of our accountants cannot map the finance share. Windows shows error 0x80070035. "
         "Everyone else in the office is fine.",
         "standard",
     ),
-    (
+    "slow database": (
         "Our database feels slow sometimes. Not sure when it started. Can you take a look?",
         "standard",
     ),
-    ("THIS IS URGENT SEV A!!! How do I export last month's invoices to CSV?", "unified"),
-]
+    "invoice question": (
+        "THIS IS URGENT SEV A!!! How do I export last month's invoices to CSV?",
+        "unified",
+    ),
+}

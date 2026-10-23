@@ -24,7 +24,7 @@ def main():
 
     tally = {"first try": 0, "corrected": 0, "failed": 0}
     with traced_run("03_pydantic_ai") as run:
-        for case_text, plan in CASES:
+        for case_text, plan in CASES.values():
             print("=" * 80)
             print(f"CASE ({plan} plan): {case_text[:70]}...")
             # capture_run_messages() records every message sent and received,
