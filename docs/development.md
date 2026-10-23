@@ -152,8 +152,9 @@ would run them on a schedule or before each release, against a hosted model.
 
 1. `git switch -c experiment-03-<topic>`
 2. Create `experiments/03_<topic>/` with `main.py` and `README.md`. Copy the
-   shape of experiment 01: call `setup_tracing()` first, then use
-   `ai_playground`.
+   shape of experiment 01: call `setup_tracing()` first, then do the work
+   inside `with traced_run("03_<topic>"):`, so its traces are grouped and
+   labelled.
 3. If it needs new packages, add them to a group:
    `uv add --group <topic> <package>`, then `make requirements`.
 4. Run it, look at the traces, and write what you found in its README.

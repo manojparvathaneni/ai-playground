@@ -43,6 +43,7 @@ def settings() -> Settings:
         llm_timeout_seconds=5,
         llm_max_retries=0,
         agent_max_turns=3,
+        trace_user_id="test-user",
         langfuse_public_key=None,
         langfuse_secret_key=None,
     )

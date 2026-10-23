@@ -32,7 +32,9 @@ jiter==0.17.0
 openai==3.37.0
     # via ai-playground
 openinference-instrumentation==0.1.71
-    # via openinference-instrumentation-openai
+    # via
+    #   ai-playground
+    #   openinference-instrumentation-openai
 openinference-instrumentation-openai==0.1.65
     # via ai-playground
 openinference-semantic-conventions==0.1.41

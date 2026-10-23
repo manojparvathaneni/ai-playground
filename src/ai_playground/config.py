@@ -37,6 +37,10 @@ class Settings(BaseSettings):
 
     # --- Tracing (see tracing.py) ---------------------------------------------
     trace_project_name: str = "agentic-ai-course"
+    # The user each trace is recorded for. There are no real users yet, so
+    # every run uses this made-up one; a chat app would use each request's
+    # real user instead.
+    trace_user_id: str = "playground-user"
     phoenix_collector_endpoint: str = "http://localhost:6006"
     langfuse_host: str = "http://localhost:3000"
     # Without these, traces go to Phoenix only.

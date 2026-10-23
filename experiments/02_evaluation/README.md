@@ -54,6 +54,11 @@ To see the results in the tools, open the `agentic-ai-course` project:
 - **Langfuse** (<http://localhost:3000>): the same traces, each with a
   `correct` score.
 
+Each run is one **session**, named like `02_evaluation-20261023-021411` and
+printed at the end, so a run's six traces appear together on both tools'
+Sessions pages. Every trace is also labelled with the model and git commit;
+see [sessions](../../docs/tracing.md#sessions-the-traces-of-one-run).
+
 ## What it found
 
 In the first runs, 5 of 6 cases passed. The `local` case ("What's the time

@@ -13,7 +13,7 @@ from ai_playground.evals import Case, pass_rate, print_report, run_evaluation
 from ai_playground.llm import call_llm
 from ai_playground.scores import publish_scores
 from ai_playground.tools import get_current_time, get_current_time_in_timezone
-from ai_playground.tracing import setup_tracing
+from ai_playground.tracing import setup_tracing, traced_run
 
 # The questions, and the timezones whose current time each answer must state.
 # "local" means this computer's own timezone.
@@ -51,8 +51,12 @@ def answer(question: str) -> str:
 def main() -> None:
     setup_tracing()
 
-    results = run_evaluation(CASES, answer, states_correct_times)
+    # One session per run, so its six traces show up together in Phoenix and
+    # Langfuse, labelled with the model and git commit.
+    with traced_run("02_evaluation", tags=["eval"]) as run:
+        results = run_evaluation(CASES, answer, states_correct_times)
     print_report(results)
+    print(f"Session: {run.session_id}")
 
     # Attach each verdict to its trace, so Phoenix and Langfuse show it too.
     publish_scores(results)

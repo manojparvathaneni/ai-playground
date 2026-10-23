@@ -13,22 +13,28 @@ a tree:
   └── turn 2
       └── Response                       <- the model gives its final answer
 
-This file has two parts:
+This file has three parts:
   1. setup_tracing() decides where traces are sent: Phoenix, and Langfuse
      too when its keys are set, so you can compare the same run in both.
      To add or switch tools (Jaeger, ...), this is the part to change.
   2. span() and the helpers built on it (agent_span, turn_span, tool_span)
      create our own spans, so the rest of the code never needs to know
      attribute names.
+  3. traced_run() groups the traces of one run of a program into a session,
+     and labels them with the user, the model and the git commit.
 
 See docs/tracing.md for the full explanation.
 """
 
 import base64
+import subprocess
 from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
+from openinference.instrumentation import get_attributes_from_context, using_attributes
 from openinference.instrumentation.openai import OpenAIInstrumentor
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -174,6 +180,8 @@ def span(name: str, kind: SpanKind, input_value: str | None = None) -> Generator
     """Start a span of any kind. The helpers below are shortcuts for common ones."""
     with tracer.start_as_current_span(name) as current:
         current.set_attribute(SPAN_KIND, kind)
+        # Inside traced_run(), add its session, user, tags and metadata.
+        current.set_attributes(dict(get_attributes_from_context()))
         if input_value is not None:
             current.set_attribute(INPUT, input_value)
         yield current
@@ -205,3 +213,67 @@ def tool_span(name: str, arguments: str) -> Generator[Span]:
 def set_output(current: Span, value: str) -> None:
     """Record what a step produced, so the tools can show it next to the input."""
     current.set_attribute(OUTPUT, value)
+
+
+# ---------------------------------------------------------------------------
+# 3. Runs: grouping the traces of one run of a program
+#
+# Each agent call, and each evaluation case, is a trace of its own. Inside
+# traced_run(), every span gets the same session ID, so Phoenix and Langfuse
+# show the run's traces together on their Sessions pages. Each span also gets
+# the user, tags and metadata (the model and git commit), which both tools
+# can filter by: "every run with gemma", or "everything since commit abc123".
+#
+# using_attributes() comes from OpenInference. It puts these values in the
+# current context: the OpenAI instrumentor adds them to its spans, and span()
+# above adds them to ours.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Run:
+    """What traced_run() attached to the run's spans."""
+
+    session_id: str
+    user_id: str
+    tags: list[str]
+    metadata: dict[str, str]
+
+
+def git_commit() -> str:
+    """The current commit, such as "8196f8a", or "8196f8a-dirty" if files were
+    changed since. "unknown" if this isn't a git repository."""
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        changes = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except OSError, subprocess.CalledProcessError:  # no git, or not a repository
+        return "unknown"
+    return f"{commit}-dirty" if changes else commit
+
+
+@contextmanager
+def traced_run(
+    name: str, tags: list[str] | None = None, settings: Settings | None = None
+) -> Generator[Run]:
+    """Group every trace made inside this block into one session.
+
+    with traced_run("02_evaluation", tags=["eval"]) as run:
+        ...                                  # every span here is labelled
+    print(run.session_id)                    # "02_evaluation-20261023-061005"
+    """
+    if settings is None:
+        settings = Settings()
+    run = Run(
+        session_id=f"{name}-{datetime.now():%Y%m%d-%H%M%S}",
+        user_id=settings.trace_user_id,
+        tags=[name, *(tags or [])],
+        metadata={"model": settings.llm_model, "git_commit": git_commit()},
+    )
+    with using_attributes(
+        session_id=run.session_id, user_id=run.user_id, tags=run.tags, metadata=run.metadata
+    ):
+        yield run
