@@ -24,14 +24,28 @@ Tool = Callable[..., Any]
 # ---------------------------------------------------------------------------
 
 
+def format_time(moment: datetime) -> str:
+    """Write a time on both clocks, such as "01:13:00 (1:13 AM)".
+
+    With only "01:13:00", small models sometimes say "1:13 PM". Spelling out
+    AM or PM leaves them nothing to guess.
+    """
+    twelve_hour = moment.strftime("%I:%M %p").lstrip("0")  # "01:13 AM" -> "1:13 AM"
+    return f"{moment.strftime('%H:%M:%S')} ({twelve_hour})"
+
+
 def get_current_time() -> str:
-    """Get the current local time."""
-    return datetime.now().strftime("%H:%M:%S")
+    """Get the current time where the user is, in their own timezone.
+
+    Use this when the user asks for the time "here", the local time, or the
+    time without naming a place.
+    """
+    return format_time(datetime.now())
 
 
 def get_current_time_in_timezone(timezone: str) -> str:
     """Get the current time in an IANA timezone, such as UTC or Asia/Tokyo."""
-    return datetime.now(ZoneInfo(timezone)).strftime("%H:%M:%S")
+    return format_time(datetime.now(ZoneInfo(timezone)))
 
 
 # ---------------------------------------------------------------------------

@@ -68,8 +68,8 @@ def test_tool_results_are_sent_back_over_several_turns(settings, model):
     final = text_answer()
     model.replies = [first, second, final]
 
-    with patch("ai_playground.tools.datetime") as datetime:
-        datetime.now.return_value.strftime.side_effect = ["local time", "UTC time", "Tokyo time"]
+    with patch("ai_playground.tools.format_time") as format_time:
+        format_time.side_effect = ["local time", "UTC time", "Tokyo time"]
         result = call_llm(
             "Time?", tools=[get_current_time, get_current_time_in_timezone], settings=settings
         )
