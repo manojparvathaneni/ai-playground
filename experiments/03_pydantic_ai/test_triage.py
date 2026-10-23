@@ -12,10 +12,10 @@ from pydantic_ai import (
     capture_run_messages,
     models,
 )
-from pydantic_ai.messages import ThinkingPart
+from pydantic_ai.messages import ThinkingPart, ToolCallPart
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from triage import CaseDeps, TriageValidated, make_model, triage_agent
+from triage import CASES, EXAMPLES, CaseDeps, TriageValidated, make_agent, make_model, triage_agent
 
 from ai_playground.config import Settings
 
@@ -213,3 +213,66 @@ def test_claude_gets_structured_output_and_an_explicit_effort():
 def test_effort_none_is_rejected_for_claude():
     with pytest.raises(ValueError, match="isn't a Claude effort level"):
         make_model(claude_settings(llm_reasoning_effort="none"))
+
+
+def test_the_tool_output_agent_gets_its_answer_as_a_tool_call():
+    def calls_the_tool(messages, info: AgentInfo) -> ModelResponse:
+        requests = sum(1 for message in messages if message.kind == "request")
+        answer = WRONG if requests == 1 else RIGHT
+        (tool,) = info.output_tools  # the schema, offered as a tool
+        return ModelResponse(parts=[ToolCallPart(tool.name, json.dumps(answer))])
+
+    agent = make_agent("tool")
+    with capture_run_messages() as messages:
+        result = agent.run_sync(
+            INVOICE_CASE,
+            deps=CaseDeps(INVOICE_CASE, "standard"),
+            model=FunctionModel(calls_the_tool),
+        )
+
+    assert result.output.severity == "C"
+    assert len(retry_prompts(messages)) == 1  # the same checks, the same retry
+
+
+def test_the_worked_examples_dont_contain_the_evaluation_cases():
+    from evaluate import HELD_OUT
+
+    texts = [text for text, _ in CASES.values()] + [text for text, _, _ in HELD_OUT.values()]
+    for text in texts:
+        assert text[:40] not in EXAMPLES
+
+
+@pytest.mark.parametrize("text", ["null", "None", " "])
+def test_null_written_as_text_is_repaired(text):
+    case = "Something is off with our database, can you check?"
+    vague = {
+        **RIGHT,
+        "product_area": "database",
+        "customer_impact": "degraded",
+        "affected_users": text,
+        "confidence": 0.4,
+        "missing_info": ["What is slow?"],
+    }
+
+    assert (
+        TriageValidated.model_validate(vague, context={"source_text": case}).affected_users is None
+    )
+
+
+def test_the_output_tool_is_named_and_described_for_the_model():
+    def check_tool(messages, info: AgentInfo) -> ModelResponse:
+        (tool,) = info.output_tools
+        assert tool.name == "submit_triage"
+        assert tool.description == "The triage of one support case, for the engineer."
+        return ModelResponse(parts=[ToolCallPart(tool.name, json.dumps(RIGHT))])
+
+    agent = make_agent("tool")
+    agent.run_sync(
+        INVOICE_CASE, deps=CaseDeps(INVOICE_CASE, "standard"), model=FunctionModel(check_tool)
+    )
+
+
+def test_the_model_reads_a_description_written_for_it():
+    schema = TriageValidated.model_json_schema()
+
+    assert schema["description"] == "The triage of one support case, for the engineer."
