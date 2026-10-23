@@ -13,6 +13,7 @@ from pydantic_ai import (
     models,
 )
 from pydantic_ai.messages import ThinkingPart
+from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from triage import CaseDeps, TriageValidated, make_model, triage_agent
 
@@ -184,3 +185,31 @@ def test_a_group_labelled_single_user_is_told_the_impact_is_wrong():
     with pytest.raises(ValidationError, match="the case says 60 users are affected") as raised:
         TriageValidated.model_validate(answer, context={"source_text": text})
     assert "fit together" not in str(raised.value)  # not sent to change the severity
+
+
+def claude_settings(**changes):
+    return Settings(
+        _env_file=None,
+        llm_provider="anthropic",
+        llm_model="claude-haiku-5-5",
+        anthropic_api_key="test-key",
+        **changes,
+    )
+
+
+def test_claude_gets_structured_output_and_an_explicit_effort():
+    model = make_model(claude_settings())
+
+    assert isinstance(model, AnthropicModel)
+    assert model.model_name == "claude-haiku-5-5"
+    # NativeOutput becomes Claude's structured output, which enforces the schema.
+    assert model.profile.get("supports_json_schema_output")
+    assert (model.settings or {})["anthropic_effort"] == "medium"
+    assert (make_model(claude_settings(llm_reasoning_effort="low")).settings or {})[
+        "anthropic_effort"
+    ] == "low"
+
+
+def test_effort_none_is_rejected_for_claude():
+    with pytest.raises(ValueError, match="isn't a Claude effort level"):
+        make_model(claude_settings(llm_reasoning_effort="none"))

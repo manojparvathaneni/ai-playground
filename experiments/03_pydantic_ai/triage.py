@@ -22,7 +22,10 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from pydantic_ai import Agent, ModelRetry, NativeOutput, RunContext
+from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
+from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from ai_playground.config import Settings
@@ -220,10 +223,12 @@ def unified_plan_escalates(ctx: RunContext[CaseDeps], output: TriageValidated) -
     return output
 
 
-def make_model(settings: Settings | None = None) -> OpenAIChatModel:
-    """The model from Settings, through any OpenAI-compatible server (LM Studio by default)."""
+def make_model(settings: Settings | None = None) -> Model:
+    """The model from Settings: Claude, or any OpenAI-compatible server (LM Studio by default)."""
     if settings is None:
         settings = Settings()
+    if settings.llm_provider == "anthropic":
+        return make_claude_model(settings)
     provider = OpenAIProvider(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
     model_settings = OpenAIChatModelSettings()
     if settings.llm_reasoning_effort is not None:
@@ -232,6 +237,28 @@ def make_model(settings: Settings | None = None) -> OpenAIChatModel:
         # retry gets "Please return text." and fails the same way.
         model_settings["openai_reasoning_effort"] = settings.llm_reasoning_effort
     return OpenAIChatModel(settings.llm_model, provider=provider, settings=model_settings)
+
+
+def make_claude_model(settings: Settings) -> AnthropicModel:
+    """Claude through Anthropic's own API, not its OpenAI-compatible endpoint.
+
+    The OpenAI-compatible endpoint ignores response_format, which is how
+    NativeOutput sends the schema, so Claude would only be asked for the
+    shape, not held to it. Here NativeOutput becomes Claude's structured
+    output, which enforces the schema while it writes, as LM Studio does.
+    """
+    effort = settings.llm_reasoning_effort or "medium"
+    if effort not in ("low", "medium", "high"):
+        raise ValueError(f"LLM_REASONING_EFFORT={effort} isn't a Claude effort level")
+    provider = AnthropicProvider(api_key=settings.anthropic_api_key)
+    # Thinking is on by default for current Claude models; effort sets how
+    # much it thinks and writes. Set explicitly, rather than relying on the
+    # default, so a change in the default doesn't change the results.
+    return AnthropicModel(
+        settings.llm_model,
+        provider=provider,
+        settings=AnthropicModelSettings(anthropic_effort=effort),
+    )
 
 
 # ---------------------------------------------------------------------------

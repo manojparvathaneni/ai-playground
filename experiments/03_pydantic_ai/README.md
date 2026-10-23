@@ -69,6 +69,20 @@ a model server like the other experiments (LM Studio with
 uv run python experiments/03_pydantic_ai/main.py
 ```
 
+To use Claude instead of LM Studio, add your key to `.env` and pick the
+model there or on the command line:
+
+```sh
+LLM_PROVIDER=anthropic LLM_MODEL=claude-haiku-5-5 \
+  uv run python experiments/03_pydantic_ai/evaluate.py
+```
+
+This goes through Anthropic's own API (`AnthropicModel` in `make_model()`),
+not its OpenAI-compatible endpoint: that endpoint ignores `response_format`,
+which is how `NativeOutput` sends the schema. Claude Haiku 5.5 costs $0.10
+per million input tokens and $0.50 per million output tokens, so a run of
+the evaluation costs a fraction of a cent.
+
 To measure how often the triage is right, run the evaluation:
 
 ```sh

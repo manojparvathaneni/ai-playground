@@ -29,7 +29,7 @@ dev = [
 ]
 pydantic-ai = [
     "openinference-instrumentation-pydantic-ai>=0.1.30",
-    "pydantic-ai-slim[openai]>=2.55.0",
+    "pydantic-ai-slim[anthropic,openai]>=2.55.0",
 ]
 
 [build-system]
