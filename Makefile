@@ -2,7 +2,7 @@
 # Each one is a plain command you can also run by hand; see the lines below.
 
 .DEFAULT_GOAL := help
-.PHONY: help install check lint format typecheck test lock up down requirements
+.PHONY: help install check lint format typecheck test lock up down backup restore requirements
 
 help:  ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-13s %s\n", $$1, $$2}'
@@ -47,3 +47,9 @@ up:  ## Start Phoenix and Langfuse in Docker
 
 down:  ## Stop Phoenix and Langfuse (traces are kept)
 	docker compose down
+
+backup:  ## Save all Phoenix and Langfuse data to backups/<date-time>/
+	docker/backup.sh
+
+restore:  ## Replace the data with a backup: make restore BACKUP=backups/<date-time>
+	docker/restore.sh $(BACKUP)
