@@ -1,5 +1,7 @@
 """Tests for the spans we create (ai_playground/tracing.py)."""
 
+import json
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -9,10 +11,12 @@ from ai_playground.llm import call_llm
 from ai_playground.tools import get_current_time, get_current_time_in_timezone
 from ai_playground.tracing import (
     SpanKind,
+    git_commit,
     langfuse_auth_header,
     langfuse_headers,
     make_exporters,
     span,
+    traced_run,
 )
 from tests.fakes import function_call, response_with, text_answer
 
@@ -115,3 +119,38 @@ def test_langfuse_headers_sign_in_and_ask_for_the_current_format():
         "Authorization": "Basic cGs6c2s=",
         "x-langfuse-ingestion-version": "4",
     }
+
+
+def test_traced_run_labels_every_span_inside_it(settings, span_exporter):
+    with traced_run("demo", tags=["eval"], settings=settings) as run:
+        with span("outer", SpanKind.CHAIN), span("inner", SpanKind.TOOL):
+            pass
+
+    assert run.session_id.startswith("demo-")
+    for finished in span_exporter.get_finished_spans():
+        attributes = finished.attributes
+        assert attributes["session.id"] == run.session_id
+        assert attributes["user.id"] == "test-user"
+        assert attributes["tag.tags"] == ("demo", "eval")
+        metadata = json.loads(attributes["metadata"])
+        assert metadata["model"] == "test-model"
+        assert metadata["git_commit"] == run.metadata["git_commit"]
+
+
+def test_spans_outside_a_run_have_no_session(span_exporter):
+    with traced_run("demo"):
+        pass
+    with span("later", SpanKind.CHAIN):
+        pass
+
+    (later,) = span_exporter.get_finished_spans()
+    assert "session.id" not in later.attributes
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError(), subprocess.CalledProcessError(128, "git")],  # no git; not a repository
+)
+def test_git_commit_without_git(error):
+    with patch("ai_playground.tracing.subprocess.run", side_effect=error):
+        assert git_commit() == "unknown"

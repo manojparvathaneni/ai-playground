@@ -194,6 +194,12 @@ are defined once, at the top of the helpers section in `tracing.py`:
 | `input.value` | the prompt; `{"timezone":"UTC"}` | What went into the step. |
 | `output.value` | the final answer; `"03:56:14 (3:56 AM)"` | What came out of the step. |
 | `tool.name` | `get_current_time` | Which tool ran (tool spans only). |
+| `session.id` | `02_evaluation-20261023-021411` | Which run of a program the span belongs to (see [sessions](#sessions-the-traces-of-one-run)). |
+| `user.id` | `playground-user` | Who the run was for. |
+| `tag.tags` | `["02_evaluation", "eval"]` | Labels to filter by. |
+| `metadata` | `{"model": "google/gemma-4-e4b", "git_commit": "8196f8a"}` | Anything else worth filtering by. |
+
+The last four are set by `traced_run()`, on every span inside it.
 
 The span kinds we use:
 
@@ -230,7 +236,7 @@ with span("search docs", SpanKind.RETRIEVER, question) as current:
 | Evaluations | EVALUATOR | Already done: `evals.py` puts each grade in an EVALUATOR span. |
 | MCP tools | TOOL | A tool called through MCP still goes through `run_tool()`, so it gets a tool span. When the MCP server is a separate program, OpenInference's MCP instrumentor passes the trace along, so spans the server creates join the same trace instead of starting a new one. |
 | Several agents | AGENT inside AGENT | Nothing to do: an agent run inside another agent's tool becomes its child automatically (section 4). |
-| Chat with memory | many traces, one per message | Group them into a *session* by setting a `session.id` attribute, which both tools use to show a whole conversation together. |
+| Chat with memory | many traces, one per message | Wrap each conversation in `traced_run()`, so its messages share a session, and pass the real user's ID instead of the setting (see [sessions](#sessions-the-traces-of-one-run)). |
 
 In each case the new code goes in `tracing.py`, and the rest of the code
 keeps calling helpers.
@@ -350,6 +356,41 @@ the spans have been sent.
 Filtering by score is the quickest way to find failures: show only traces
 where `correct` is `fail` (Phoenix) or `0` (Langfuse), then open one to see
 what the model did.
+
+### Sessions: the traces of one run
+
+Each agent call is its own trace, so one evaluation run makes six traces,
+one per question. Without anything else, nothing says which six belong
+together. `traced_run()` in `tracing.py` fixes that:
+
+```python
+with traced_run("02_evaluation", tags=["eval"]) as run:
+    results = run_evaluation(CASES, answer, states_correct_times)
+print(f"Session: {run.session_id}")    # 02_evaluation-20261023-021411
+```
+
+Every span started inside the block, ours and the automatic `Response`
+spans alike, gets four attributes:
+
+- `session.id`: the run's name and start time, a new one per run;
+- `user.id`: `TRACE_USER_ID` from `.env`, `playground-user` by default.
+  There are no real users yet, so it's made up; a chat app would use the
+  real user's ID for each conversation;
+- `tag.tags`: the run's name plus any tags you pass;
+- `metadata`: the model and the git commit, with `-dirty` added if files had
+  changed since the commit, so you can tell which code produced a trace.
+
+It works through OpenInference's `using_attributes()`, which keeps the
+values in the current context: the OpenAI instrumentor adds them to its
+spans, and `span()` adds them to ours.
+
+| | Phoenix | Langfuse |
+|---|---|---|
+| A run's traces together | the project's **Sessions** tab | the **Sessions** page |
+| Filter by user, tag or model | filter spans by the `user.id`, `tag.tags` or `metadata` attribute | the User and Tags filters on the traces list; the model and commit are in each trace's metadata |
+
+Comparing two sessions side by side (for example before and after a prompt
+change) shows whether a change helped: same questions, different results.
 
 Other features differ more. Langfuse has prompt management and cost
 dashboards; both can store datasets of test cases. Those are worth exploring
