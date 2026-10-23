@@ -59,6 +59,12 @@ printed at the end, so a run's six traces appear together on both tools'
 Sessions pages. Every trace is also labelled with the model and git commit;
 see [sessions](../../docs/tracing.md#sessions-the-traces-of-one-run).
 
+The six questions are also kept as the **`time-questions` dataset** in both
+tools, and each run is an **experiment** on it, with the same name as the
+session. Open `time-questions` on either tool's Datasets page to compare
+runs case by case; see
+[datasets and experiments](../../docs/tracing.md#datasets-and-experiments-comparing-runs).
+
 ## What it found
 
 In the first runs, 5 of 6 cases passed. The `local` case ("What's the time
@@ -85,8 +91,9 @@ of the prompt.
 
 ## Try next
 
-- **Compare models.** Set `LLM_MODEL` in `.env` to another model and compare
-  pass rates.
+- **Compare models.** Set `LLM_MODEL` in `.env` to another model, run it,
+  and compare the two experiments on the `time-questions` dataset in Phoenix
+  or Langfuse. Which cases does each model get wrong?
 - **Add cases.** Add questions the agent might get wrong, such as a city with
   a half-hour offset (India) or a question with no time in it at all.
 - **Run it several times.** Models aren't deterministic, so one run can pass

@@ -257,18 +257,23 @@ format.
 ```
                  TracerProvider  (resource: openinference.project.name = agentic-ai-course)
                  │
-spans ──────────►├── BatchSpanProcessor ──► OTLPSpanExporter ──► Phoenix   localhost:6006/v1/traces
+spans ──────────►├── ExperimentAttributes   (adds experiment labels as each span starts)
+                 │
+                 ├── BatchSpanProcessor ──► OTLPSpanExporter ──► Phoenix   localhost:6006/v1/traces
                  │
                  └── BatchSpanProcessor ──► OTLPSpanExporter ──► Langfuse  localhost:3000/api/public/otel/v1/traces
 ```
 
 - **TracerProvider** is the centre of OpenTelemetry. `trace.get_tracer()`
   returns tracers that report to it, and every span that ends is handed to
-  each of its processors. Because there are two processors, **every span goes
-  to both tools**.
+  each of its processors. Because there are two exporting processors,
+  **every span goes to both tools**.
 - **Resource** describes who is sending the spans. Phoenix reads the
   `openinference.project.name` resource attribute to choose the project.
   Langfuse ignores it and uses the project that the API keys belong to.
+- **ExperimentAttributes** sends nothing: it copies Langfuse's experiment
+  labels onto each span as it starts (see
+  [datasets and experiments](#datasets-and-experiments-comparing-runs)).
 - **BatchSpanProcessor** collects finished spans and sends them in groups,
   in the background, so tracing doesn't slow the agent down.
 - **OTLPSpanExporter** sends a batch over HTTP using **OTLP**, the
@@ -389,12 +394,56 @@ spans, and `span()` adds them to ours.
 | A run's traces together | the project's **Sessions** tab | the **Sessions** page |
 | Filter by user, tag or model | filter spans by the `user.id`, `tag.tags` or `metadata` attribute | the User and Tags filters on the traces list; the model and commit are in each trace's metadata |
 
-Comparing two sessions side by side (for example before and after a prompt
-change) shows whether a change helped: same questions, different results.
+To compare two runs case by case, use the experiments below.
+
+### Datasets and experiments: comparing runs
+
+Scores tell you how each case did in one run. To see whether a change
+helped, you want the same questions, run twice, side by side. Both tools
+have that built in:
+
+- a **dataset** is a fixed set of examples: here, experiment 02's six
+  questions and what each answer must contain;
+- an **experiment** is one run of an application over a dataset, with each
+  example's output and grade. Both tools list a dataset's experiments and can
+  compare two of them, example by example.
+
+[Experiment 02](../experiments/02_evaluation/) does this on every run, with
+[`datasets.py`](../src/ai_playground/datasets.py):
+
+```python
+dataset = sync_dataset("time-questions", CASES)        # create or update it in both
+with traced_run("02_evaluation", tags=["eval"]) as run:
+    experiment = Experiment(run.session_id, dataset, run.metadata)
+    results = run_evaluation(CASES, answer, states_correct_times, experiment)
+publish_scores(results)                                # grades on the traces
+record_experiment(experiment, results)                 # the run, in Phoenix
+```
+
+`sync_dataset()` keeps each tool's copy in step with `CASES`. Each case has
+a stable ID, such as `time-questions-local-and-utc`, the same in both tools
+and in every run, which is how a case in one run is matched with the same
+case in another. Changed cases are updated; removed ones are deleted in
+Phoenix (which keeps the old version) and archived in Langfuse.
+
+The two tools record the experiment in different ways:
+
+| | Phoenix | Langfuse |
+|---|---|---|
+| How the run gets there | Through its API, after the run: `record_experiment()` creates the experiment, then one run and one evaluation per case, each linked to the case's trace | From the spans themselves, during the run: every span of a case's trace carries `langfuse.experiment.*` labels |
+| Where the grade comes from | the evaluation `record_experiment()` sends | the `correct` score from `scores.py`, attached to the case's top span |
+| Where to see it | the Datasets page: open `time-questions` to see its experiments | the Datasets page: open `time-questions` to see its experiments |
+
+For Langfuse, `run_evaluation()` wraps the run in `experiment_context()` and
+each case in `experiment_item()`, both in `tracing.py`. They put the labels
+in OpenTelemetry's **baggage**, which carries values to everything that runs
+inside a block, and the `ExperimentAttributes` processor copies them onto
+every span as it starts, including the automatic `Response` spans. Langfuse
+requires this: a span without the labels isn't counted as part of the
+experiment.
 
 Other features differ more. Langfuse has prompt management and cost
-dashboards; both can store datasets of test cases. Those are worth exploring
-once traces and scores feel familiar.
+dashboards. Those are worth exploring once traces and scores feel familiar.
 
 ## 9. What runs in Docker
 

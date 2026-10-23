@@ -12,8 +12,6 @@ Once sent, you can filter traces by score in both tools (for example, show
 only the failures) and see the explanation next to each trace.
 """
 
-import json
-import urllib.request
 from typing import Any
 
 from opentelemetry import trace
@@ -21,22 +19,11 @@ from opentelemetry.sdk.trace import TracerProvider
 
 from ai_playground.config import Settings
 from ai_playground.evals import Result
+from ai_playground.http_json import post_json
 from ai_playground.tracing import langfuse_auth_header
 
 # The name the score appears under in both tools.
 SCORE_NAME = "correct"
-
-
-def post_json(url: str, body: Any, headers: dict[str, str] | None = None) -> None:
-    """Send JSON to a URL with an HTTP POST. Raises an error if it's rejected."""
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", **(headers or {})},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=10):
-        pass
 
 
 def phoenix_annotations(results: list[Result]) -> dict[str, Any]:
@@ -63,6 +50,8 @@ def langfuse_scores(results: list[Result]) -> list[dict[str, Any]]:
     return [
         {
             "traceId": result.trace_id,
+            # The case's top span. Langfuse shows experiment scores from there.
+            "observationId": result.span_id,
             "name": SCORE_NAME,
             "value": 1 if result.grade.passed else 0,
             "dataType": "BOOLEAN",

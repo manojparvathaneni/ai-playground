@@ -1,6 +1,6 @@
 """Tests for the evaluation runner (ai_playground/evals.py)."""
 
-from ai_playground.evals import Case, Grade, pass_rate, run_evaluation
+from ai_playground.evals import Case, Dataset, Experiment, Grade, pass_rate, run_evaluation
 
 
 def contains_expected_word(case: Case, answer: str) -> Grade:
@@ -54,3 +54,43 @@ def test_cases_are_traced_with_their_grade(span_exporter):
 
 def test_pass_rate_of_no_results_is_zero():
     assert pass_rate([]) == 0.0
+
+
+def test_results_record_their_span_and_timing(span_exporter):
+    (result,) = run_evaluation(
+        [Case("hello", "Say hello", {"word": "hello"})], lambda q: "hello", contains_expected_word
+    )
+
+    (root,) = [s for s in span_exporter.get_finished_spans() if s.name == "eval: hello"]
+    assert result.trace_id == format(root.context.trace_id, "032x")
+    assert result.span_id == format(root.context.span_id, "016x")
+    assert result.started_at is not None and result.ended_at is not None
+    assert result.started_at <= result.ended_at
+
+
+def test_dataset_item_ids_are_stable_and_have_no_spaces():
+    dataset = Dataset("time-questions", [])
+
+    assert dataset.item_id(Case("local and utc", "?")) == "time-questions-local-and-utc"
+
+
+def test_an_experiment_labels_each_case_as_a_dataset_item(span_exporter):
+    case = Case("hello", "Say hello", {"word": "hello"})
+    dataset = Dataset("greetings", [case], langfuse_id="langfuse-dataset-id")
+
+    run_evaluation([case], lambda q: "hello", contains_expected_word, Experiment("run-1", dataset))
+
+    for finished in span_exporter.get_finished_spans():  # the case and its grade
+        assert finished.attributes["langfuse.experiment.name"] == "run-1"
+        assert finished.attributes["langfuse.experiment.dataset.id"] == "langfuse-dataset-id"
+        assert finished.attributes["langfuse.experiment.item.id"] == "greetings-hello"
+
+
+def test_without_a_langfuse_dataset_nothing_is_labelled(span_exporter):
+    case = Case("hello", "Say hello", {"word": "hello"})
+    dataset = Dataset("greetings", [case])  # Langfuse couldn't be reached
+
+    run_evaluation([case], lambda q: "hello", contains_expected_word, Experiment("run-1", dataset))
+
+    for finished in span_exporter.get_finished_spans():
+        assert not any(key.startswith("langfuse.") for key in finished.attributes)
