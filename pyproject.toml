@@ -22,9 +22,9 @@ dependencies = [
 # For example, a "rag" group for retrieval experiments, or "notebooks" for Jupyter.
 [dependency-groups]
 dev = [
-    "mypy>=2.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.2",
+    "ty>=0.0.91",
 ]
 
 [build-system]
@@ -42,22 +42,27 @@ extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 # E/W: style errors, F: likely bugs (unused names, undefined names),
-# I: import order, UP: newer Python syntax, B: common bug patterns.
-select = ["E", "W", "F", "I", "UP", "B"]
+# I: import order, UP: newer Python syntax, B: common bug patterns,
+# ANN: type hints on every function (see per-file-ignores below).
+select = ["E", "W", "F", "I", "UP", "B", "ANN"]
+# ANN401 bans the type Any, but it's the honest type for things like JSON.
+ignore = ["ANN401"]
 
-[tool.mypy]
-# Type-check the shared code strictly. Experiments are for trying things
-# out, so they are left out.
-files = ["src", "tests"]
-strict = true
+[tool.ruff.lint.per-file-ignores]
+# ANN requires type hints on every function. Only the shared code in src/
+# needs them: tests use mocks and fake data, and experiments are for trying
+# things out, so both are left out.
+"tests/**" = ["ANN"]
+"experiments/**" = ["ANN"]
 
-[[tool.mypy.overrides]]
-# Tests use mocks and fake data; requiring types on every test function
-# adds noise without catching much.
-module = ["tests.*"]
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-disallow_untyped_calls = false
+[tool.ty.src]
+# ty checks that the code matches its type hints. Experiments are left out,
+# as above.
+include = ["src", "tests"]
+
+[tool.ty.terminal]
+# Fail on warnings too, not only on errors.
+error-on-warning = true
 
 [tool.pytest.ini_options]
 # Experiments may keep their own tests next to their code.

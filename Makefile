@@ -21,7 +21,7 @@ format:  ## Fix formatting and the problems ruff can fix by itself
 	uv run ruff check --fix
 
 typecheck:  ## Check the type hints in src/ and tests/
-	uv run mypy
+	uv run ty check
 
 test:  ## Run the tests (offline: no model server or Docker needed)
 	uv run pytest

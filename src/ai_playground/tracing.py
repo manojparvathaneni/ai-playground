@@ -25,7 +25,7 @@ See docs/tracing.md for the full explanation.
 """
 
 import base64
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from enum import StrEnum
 
@@ -159,7 +159,7 @@ tracer = trace.get_tracer(__name__)
 
 
 @contextmanager
-def span(name: str, kind: SpanKind, input_value: str | None = None) -> Iterator[Span]:
+def span(name: str, kind: SpanKind, input_value: str | None = None) -> Generator[Span]:
     """Start a span of any kind. The helpers below are shortcuts for common ones."""
     with tracer.start_as_current_span(name) as current:
         current.set_attribute(SPAN_KIND, kind)
@@ -169,21 +169,21 @@ def span(name: str, kind: SpanKind, input_value: str | None = None) -> Iterator[
 
 
 @contextmanager
-def agent_span(prompt: str) -> Iterator[Span]:
+def agent_span(prompt: str) -> Generator[Span]:
     """Span for one whole agent run, from the user's prompt to the final answer."""
     with span("agent", SpanKind.AGENT, prompt) as current:
         yield current
 
 
 @contextmanager
-def turn_span(number: int) -> Iterator[Span]:
+def turn_span(number: int) -> Generator[Span]:
     """Span for one trip to the model and back, including the tools it asked for."""
     with span(f"turn {number}", SpanKind.CHAIN) as current:
         yield current
 
 
 @contextmanager
-def tool_span(name: str, arguments: str) -> Iterator[Span]:
+def tool_span(name: str, arguments: str) -> Generator[Span]:
     """Span for one tool call. The arguments are the JSON text the model sent."""
     with span(name, SpanKind.TOOL, arguments) as current:
         current.set_attribute(TOOL_NAME, name)

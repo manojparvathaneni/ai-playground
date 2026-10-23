@@ -47,7 +47,9 @@ def test_each_supported_type():
         """Example."""
         return ""
 
-    properties = make_tool_schema(example)["parameters"]["properties"]  # type: ignore[index]
+    parameters = make_tool_schema(example)["parameters"]
+    assert parameters is not None
+    properties = parameters["properties"]
 
     assert properties == {
         "text": {"type": "string"},

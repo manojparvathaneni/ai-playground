@@ -17,6 +17,7 @@ import urllib.request
 from typing import Any
 
 from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
 
 from ai_playground.config import Settings
 from ai_playground.evals import Result
@@ -86,7 +87,7 @@ def publish_scores(results: list[Result], settings: Settings | None = None) -> N
     # Spans are sent in the background. Send any that are still waiting, so
     # each trace exists in the tools before we attach a score to it.
     provider = trace.get_tracer_provider()
-    if hasattr(provider, "force_flush"):
+    if isinstance(provider, TracerProvider):
         provider.force_flush()
 
     try:

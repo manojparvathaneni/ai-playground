@@ -40,9 +40,9 @@ Production projects follow the same split, under different names: a
 
 **In `src/ai_playground/`:**
 
-- **Type hints on everything.** `mypy --strict` checks them. They document
-  what each function takes and returns, and catch mistakes before the code
-  runs.
+- **Type hints on everything.** Ruff fails if a function is missing them,
+  and ty checks that the code matches them. They document what each function
+  takes and returns, and catch mistakes before the code runs.
 - **Tests for everything.** Put them in `tests/test_<module>.py`. They must
   run offline: use the fakes in `tests/fakes.py` instead of a real model.
 - **Settings from `Settings`**, never hardcoded (see section 5).
@@ -87,8 +87,8 @@ understand or undo.
 
 | Command | Tool | Catches |
 |---|---|---|
-| `make lint` | ruff | Likely bugs (unused variables, undefined names, risky patterns), messy imports, and code that isn't formatted. |
-| `make typecheck` | mypy | Calling a function with the wrong type, forgetting that something can be `None`, typos in attribute names. |
+| `make lint` | ruff | Likely bugs (unused variables, undefined names, risky patterns), messy imports, missing type hints in `src/`, and code that isn't formatted. |
+| `make typecheck` | ty | Calling a function with the wrong type, forgetting that something can be `None`, typos in attribute names. |
 | `make test` | pytest | Code that doesn't do what it should. |
 | `make lock` | uv | `uv.lock` or `requirements.txt` out of step with `pyproject.toml`. |
 
@@ -126,7 +126,7 @@ versions, so every machine installs the same thing. Commit both.
 |---|---|---|
 | Every experiment needs it | `uv add <package>` | openai, opentelemetry |
 | Only some experiments need it | `uv add --group <name> <package>` | a vector database for RAG |
-| Development tools | `uv add --dev <package>` | pytest, ruff, mypy |
+| Development tools | `uv add --dev <package>` | pytest, ruff, ty |
 
 Install a group with `uv sync --group <name>`, and say which group an
 experiment needs in its README. After any change, run `make requirements` to
