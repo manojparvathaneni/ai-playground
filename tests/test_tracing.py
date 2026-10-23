@@ -11,6 +11,8 @@ from ai_playground.llm import call_llm
 from ai_playground.tools import get_current_time, get_current_time_in_timezone
 from ai_playground.tracing import (
     SpanKind,
+    experiment_context,
+    experiment_item,
     git_commit,
     langfuse_auth_header,
     langfuse_headers,
@@ -154,3 +156,22 @@ def test_spans_outside_a_run_have_no_session(span_exporter):
 def test_git_commit_without_git(error):
     with patch("ai_playground.tracing.subprocess.run", side_effect=error):
         assert git_commit() == "unknown"
+
+
+def test_experiment_labels_reach_every_span_of_an_item(span_exporter):
+    with experiment_context("run-1", "dataset-1"):
+        with span("eval: utc", SpanKind.CHAIN) as root, experiment_item(root, "item-1", "{}"):
+            with span("agent", SpanKind.AGENT), span("turn 1", SpanKind.CHAIN):
+                pass
+    with span("after", SpanKind.CHAIN):
+        pass
+
+    by_name = {s.name: s.attributes for s in span_exporter.get_finished_spans()}
+    root_id = format(root.get_span_context().span_id, "016x")
+    for name in ["eval: utc", "agent", "turn 1"]:
+        assert by_name[name]["langfuse.experiment.id"] == "run-1"
+        assert by_name[name]["langfuse.experiment.dataset.id"] == "dataset-1"
+        assert by_name[name]["langfuse.experiment.item.id"] == "item-1"
+        assert by_name[name]["langfuse.experiment.item.root_observation_id"] == root_id
+    assert by_name["eval: utc"]["langfuse.experiment.item.expected_output"] == "{}"
+    assert not any(key.startswith("langfuse.") for key in by_name["after"])

@@ -22,6 +22,8 @@ This file has three parts:
      attribute names.
   3. traced_run() groups the traces of one run of a program into a session,
      and labels them with the user, the model and the git commit.
+  4. experiment_context() and experiment_item() mark an evaluation's traces
+     as an experiment on a Langfuse dataset.
 
 See docs/tracing.md for the full explanation.
 """
@@ -36,10 +38,12 @@ from enum import StrEnum
 
 from openinference.instrumentation import get_attributes_from_context, using_attributes
 from openinference.instrumentation.openai import OpenAIInstrumentor
-from opentelemetry import trace
+from opentelemetry import baggage, context, trace
+from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import Span as SdkSpan
+from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.trace import Span
 
@@ -119,6 +123,8 @@ def setup_tracing(settings: Settings | None = None) -> TracerProvider:
     # attribute to group traces into a project.
     resource = Resource.create({"openinference.project.name": settings.trace_project_name})
     tracer_provider = TracerProvider(resource=resource)
+    # Copies experiment labels onto every span (see part 4 below).
+    tracer_provider.add_span_processor(ExperimentAttributes())
     for exporter in make_exporters(settings):
         tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
 
@@ -277,3 +283,71 @@ def traced_run(
         session_id=run.session_id, user_id=run.user_id, tags=run.tags, metadata=run.metadata
     ):
         yield run
+
+
+# ---------------------------------------------------------------------------
+# 4. Experiments: an evaluation run on a Langfuse dataset
+#
+# Langfuse 4 learns that a trace is one case of an experiment from labels on
+# its spans: every span of the case's trace, including the ones the OpenAI
+# instrumentor makes, needs the experiment's IDs and the case's dataset item
+# ID. (Phoenix learns about experiments through its API instead; see
+# datasets.py.)
+#
+# OpenTelemetry's "baggage" carries values to everything that runs inside a
+# block, and ExperimentAttributes copies them onto each span as it starts.
+# Each case's top span (its "root") also gets the item labels directly.
+# ---------------------------------------------------------------------------
+
+EXPERIMENT_PREFIX = "langfuse.experiment."
+
+
+class ExperimentAttributes(SpanProcessor):
+    """Copies the Langfuse experiment labels in the baggage onto every new span."""
+
+    def on_start(self, span: SdkSpan, parent_context: Context | None = None) -> None:
+        for key, value in baggage.get_all(parent_context).items():
+            if key.startswith(EXPERIMENT_PREFIX):
+                span.set_attribute(key, str(value))
+
+
+@contextmanager
+def with_baggage(values: dict[str, str]) -> Generator[None]:
+    """Put values in the baggage for everything that runs inside this block."""
+    current = context.get_current()
+    for key, value in values.items():
+        current = baggage.set_baggage(key, value, current)
+    token = context.attach(current)
+    try:
+        yield
+    finally:
+        context.detach(token)
+
+
+@contextmanager
+def experiment_context(experiment_name: str, dataset_id: str) -> Generator[None]:
+    """Mark every trace started inside this block as part of one experiment."""
+    with with_baggage(
+        {
+            f"{EXPERIMENT_PREFIX}id": experiment_name,
+            f"{EXPERIMENT_PREFIX}name": experiment_name,
+            f"{EXPERIMENT_PREFIX}dataset.id": dataset_id,
+        }
+    ):
+        yield
+
+
+@contextmanager
+def experiment_item(root: Span, item_id: str, expected_output: str) -> Generator[None]:
+    """Mark root, a case's top span, and every span under it as one dataset item."""
+    item = {
+        f"{EXPERIMENT_PREFIX}item.id": item_id,
+        # Langfuse needs the root span's own ID, as 16 hex characters.
+        f"{EXPERIMENT_PREFIX}item.root_observation_id": format(
+            root.get_span_context().span_id, "016x"
+        ),
+    }
+    root.set_attributes(item)
+    root.set_attribute(f"{EXPERIMENT_PREFIX}item.expected_output", expected_output)
+    with with_baggage(item):
+        yield

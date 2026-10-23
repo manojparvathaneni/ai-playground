@@ -11,9 +11,11 @@ model and your code did.
 │   ├── config.py           Settings: every setting, read from env vars and .env
 │   ├── llm.py              call_llm(): the agent loop
 │   ├── tools.py            example tools, and make_tool_schema()
-│   ├── tracing.py          setup_tracing() and span helpers
+│   ├── tracing.py          setup_tracing(), span helpers, sessions, experiment labels
 │   ├── evals.py            run cases through an application and grade them
-│   └── scores.py           send eval scores to Phoenix and Langfuse
+│   ├── scores.py           send eval scores to Phoenix and Langfuse
+│   ├── datasets.py         keep eval cases as datasets, and runs as experiments
+│   └── http_json.py        small helpers for the tools' JSON APIs
 ├── experiments/            one numbered folder per experiment
 ├── tests/                  offline tests for src/ai_playground
 ├── docs/                   longer guides

@@ -6,6 +6,7 @@ from ai_playground.evals import Case, Grade, Result
 from ai_playground.scores import langfuse_scores, phoenix_annotations, publish_scores
 
 TRACE_ID = "0123456789abcdef0123456789abcdef"
+SPAN_ID = "0123456789abcdef"
 
 
 def passed_result(trace_id=TRACE_ID):
@@ -13,7 +14,7 @@ def passed_result(trace_id=TRACE_ID):
 
 
 def failed_result():
-    return Result(Case("local", "Time here?"), "?", Grade(False, "no times"), TRACE_ID)
+    return Result(Case("local", "Time here?"), "?", Grade(False, "no times"), TRACE_ID, SPAN_ID)
 
 
 def test_phoenix_annotations():
@@ -39,6 +40,7 @@ def test_langfuse_scores():
     assert langfuse_scores([failed_result()]) == [
         {
             "traceId": TRACE_ID,
+            "observationId": SPAN_ID,
             "name": "correct",
             "value": 0,
             "dataType": "BOOLEAN",

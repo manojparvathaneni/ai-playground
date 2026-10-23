@@ -142,8 +142,10 @@ regenerate `requirements.txt`; `make check` fails until you do.
 Tests check the code; evaluations check the model's behaviour (see
 [experiment 02](../experiments/02_evaluation/)). **Run the evaluation before
 merging any change that could change what the agent does**: a prompt, a tool
-description, the model, the agent loop. Compare the pass rate with the last
-run, and look at any new failures in Phoenix or Langfuse.
+description, the model, the agent loop. Each run is recorded as an
+experiment on the `time-questions` dataset in both tools, so compare it with
+the last run there, case by case, and look at any new failures (see
+[datasets and experiments](tracing.md#datasets-and-experiments-comparing-runs)).
 
 Evaluations need a model server, so they don't run in CI. A production team
 would run them on a schedule or before each release, against a hosted model.

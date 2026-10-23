@@ -9,7 +9,8 @@ import sys
 
 from time_grader import states_correct_times
 
-from ai_playground.evals import Case, pass_rate, print_report, run_evaluation
+from ai_playground.datasets import record_experiment, sync_dataset
+from ai_playground.evals import Case, Experiment, pass_rate, print_report, run_evaluation
 from ai_playground.llm import call_llm
 from ai_playground.scores import publish_scores
 from ai_playground.tools import get_current_time, get_current_time_in_timezone
@@ -51,15 +52,20 @@ def answer(question: str) -> str:
 def main() -> None:
     setup_tracing()
 
-    # One session per run, so its six traces show up together in Phoenix and
-    # Langfuse, labelled with the model and git commit.
-    with traced_run("02_evaluation", tags=["eval"]) as run:
-        results = run_evaluation(CASES, answer, states_correct_times)
-    print_report(results)
-    print(f"Session: {run.session_id}")
+    # Keep the cases as a dataset in Phoenix and Langfuse, so every run of
+    # them is listed there and two runs can be compared case by case.
+    dataset = sync_dataset("time-questions", CASES)
 
-    # Attach each verdict to its trace, so Phoenix and Langfuse show it too.
-    publish_scores(results)
+    # One session per run, so its six traces show up together, labelled with
+    # the model and git commit. The run is also an experiment on the dataset.
+    with traced_run("02_evaluation", tags=["eval"]) as run:
+        experiment = Experiment(run.session_id, dataset, run.metadata)
+        results = run_evaluation(CASES, answer, states_correct_times, experiment)
+    print_report(results)
+    print(f"Session and experiment: {run.session_id}")
+
+    publish_scores(results)  # each verdict on its trace, in both tools
+    record_experiment(experiment, results)  # the run on the dataset, in Phoenix
 
     if pass_rate(results) < MINIMUM_PASS_RATE:
         print(f"Below the minimum pass rate of {MINIMUM_PASS_RATE:.0%}.")
