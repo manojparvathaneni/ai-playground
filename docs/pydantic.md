@@ -865,6 +865,15 @@ with small local models:
 | `NativeOutput` | the server's JSON response format | what LM Studio enforces with grammars; the experiment uses it |
 | `PromptedOutput` | the schema is pasted into the instructions, and the text parsed | works with any model, least reliable |
 
+The choice decides which layer enforces the shape. With LM Studio,
+`NativeOutput` is enforced while the model writes, but a tool call's
+arguments aren't: in experiment 03, Qwen sent the text `"null"` in a tool
+call where it should have sent `null`. Pydantic still catches it, and a
+`before` validator can repair it (section 8). `ToolOutput` takes a `name`
+and a `description` for the tool; without them, the tool is described with
+your model's docstring, so give the model one written for it (with
+`model_config = ConfigDict(json_schema_extra={"description": ...})`).
+
 ### Retries, deps and output validators
 
 A validation error, or a `ModelRetry` from an output validator, goes back to
@@ -1097,6 +1106,12 @@ turned the triage into an evaluation. Four lessons from it:
 6. **Check what the model actually returned before blaming the rules.** A
    thinking model's answer can arrive as reasoning with an empty reply, and
    no number of retries will fix that (section 13).
+7. **Worked examples help, but a small model copies their surface.** Four
+   examples took Gemma from 60% to a steady 80%. On the vague case, though,
+   it copied the example's confidence number and not its questions.
+8. **Compare like with like.** Qwen with its thinking off scored 73%; with
+   thinking on (and one repaired value) it scored 100%, as Claude Haiku
+   did. A comparison is only as fair as the setups behind it.
 
 ## Reference
 

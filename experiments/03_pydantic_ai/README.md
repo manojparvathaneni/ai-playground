@@ -205,9 +205,64 @@ doing its job: it caught the extra question, and the retry fixed it.
 Five cases are too few to call Haiku perfect: the next step is harder
 cases (see Try next).
 
+### A fairer comparison
+
+Two things made the local models' numbers unfair: Qwen ran with its
+thinking off (to avoid the empty replies above) while Haiku thinks, and
+nobody had shown either local model what a good triage looks like. Two
+flags on `evaluate.py` test both:
+
+- `--output tool` sends the schema as a tool the model must call
+  (`make_agent("tool")`), instead of as the response format. The answer
+  arrives as a tool call, which LM Studio can't mistake for reasoning, so
+  Qwen's thinking can stay on.
+- `--examples` adds `EXAMPLES` from `triage.py` to the instructions: four
+  worked cases, one per principle the evaluation checks (a customer's label
+  doesn't set severity; one user with a connectivity error is networking at
+  C; a group in one place is B; a vague case asks questions). None is one
+  of the evaluation's cases, and a test makes sure of that, though they
+  teach the principles the cases test, so the VPN case is no longer held out
+  here.
+
+Three runs each (six for Gemma with examples):
+
+| Model | Setup | Average | Cases that gave up |
+|---|---|---|---|
+| `google/gemma-4-e4b` | as before | 60% | 3 |
+| `google/gemma-4-e4b` | with examples | **80%** (4/5 every run) | 3 |
+| `qwen/qwen3.6-35b-a3b` | thinking off | 73% | 0 |
+| `qwen/qwen3.6-35b-a3b` | thinking on, tool output | 80% | 2 |
+| `qwen/qwen3.6-35b-a3b` | thinking on, tool output, after the fix below | **100%** | 0 |
+| `claude-haiku-5-5` | | 100% | 0 |
+
+What it showed:
+
+- **Worked examples made Gemma steady.** It got four cases right in every
+  run, including the share and the "SEV A" invoice question it used to
+  miss. The vague database case still fails: Gemma copied the example's
+  `confidence: 0.4` but not its questions, and then repeated that answer
+  after every "list what you need to know". It learned the surface of the
+  example, not its point.
+- **With thinking on, Qwen matches Haiku**, but slowly: about 2.5 minutes
+  a run on this laptop, against 16 seconds for Haiku.
+- **Tool output gives up the schema layer.** LM Studio enforces a response
+  format while the model writes, but not a tool call's arguments. Qwen
+  twice sent `affected_users` as the text `"null"` instead of `null`, and
+  Pydantic's "unable to parse string as an integer" didn't tell it what to
+  do instead, so it sent `"null"` again until its retries ran out. The fix
+  is a `before` validator, `null_as_text_means_none()`, that repairs it:
+  the meaning is clear, so there's nothing to send back.
+- **The model reads your docstrings.** A model's docstring becomes its
+  schema's description, which the model reads, and the output tool's
+  description. `TriageSchema` now gives the model a description written for
+  it (`json_schema_extra`), instead of notes written for developers.
+
 ## Try next
 
-- **Harder cases.** Haiku passes all five; add cases where the right answer
+- **Examples for Qwen too.** Run `--output tool --examples` with Qwen, or
+  `--examples` with Haiku, to see whether examples help models that already
+  score well.
+- **Harder cases.** Haiku and Qwen with thinking pass all five; add cases where the right answer
   is less obvious (an outage described without a number, a question that
   quotes an error code, a customer who exaggerates) and compare models
   again.

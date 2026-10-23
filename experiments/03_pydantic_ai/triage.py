@@ -20,8 +20,8 @@ import re
 from dataclasses import dataclass
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
-from pydantic_ai import Agent, ModelRetry, NativeOutput, RunContext
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic_ai import Agent, ModelRetry, NativeOutput, RunContext, ToolOutput
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
@@ -40,6 +40,13 @@ class TriageSchema(BaseModel):
 
     Every description below is part of the prompt: the model reads them.
     """
+
+    # A docstring becomes the schema's description, which the model reads.
+    # These docstrings are written for developers, so give the model its
+    # own description instead (TriageValidated inherits it).
+    model_config = ConfigDict(
+        json_schema_extra={"description": "The triage of one support case, for the engineer."}
+    )
 
     product_area: Literal[
         "identity", "networking", "storage", "compute", "database", "billing", "other"
@@ -86,6 +93,18 @@ class TriageSchema(BaseModel):
 
 class TriageValidated(TriageSchema):
     """The meaning: rules across fields, and checks against the case text."""
+
+    @field_validator("affected_users", mode="before")
+    @classmethod
+    def null_as_text_means_none(cls, value: object) -> object:
+        # Without a schema enforced while it writes (a tool call through LM
+        # Studio), Qwen sent the text "null" instead of null, and Pydantic's
+        # "unable to parse string as an integer" didn't tell it what to do
+        # instead, so it sent "null" again until its retries ran out. The
+        # meaning is clear, so repair it rather than reject it.
+        if isinstance(value, str) and value.strip().lower() in ("null", "none", ""):
+            return None
+        return value
 
     @field_validator("error_codes")
     @classmethod
@@ -184,6 +203,37 @@ SYSTEM_PROMPT = (
 )
 
 
+# Worked examples, added to the instructions with evaluate.py --examples.
+# Each teaches one principle the evaluation checks, with a situation that
+# isn't one of its cases, so a better score means the model learned the
+# principle rather than the answers.
+EXAMPLES = """Examples of good triage:
+
+Case: "CRITICAL P1!!! How do I change the email address on my account?"
+Triage: product_area "identity", severity "C", customer_impact "question",
+needs_escalation false. The customer's own label doesn't decide severity: a
+how-to question is C.
+
+Case: "My laptop can't reach the build server; it says 'host unreachable'.
+Colleagues can reach it."
+Triage: product_area "networking", severity "C", customer_impact
+"single_user", affected_users 1. One person with a connectivity error is a
+single user, filed under networking.
+
+Case: "Around 200 staff in the Paris office can't open the intranet since
+noon. Other offices are fine."
+Triage: product_area "networking", severity "B", customer_impact
+"degraded", affected_users 200. A group in one location is B, not A:
+production isn't down for everyone.
+
+Case: "Something is off with our storage, can you check?"
+Triage: product_area "storage", severity "C", confidence 0.4, missing_info
+["What exactly is wrong: errors, slowness, or missing data?", "When did it
+start?", "Which storage accounts or volumes?"], affected_users null. When
+the case is vague, say you're unsure and ask, and don't invent numbers.
+"""
+
+
 @dataclass
 class CaseDeps:
     """What the agent knows besides the reply: its "dependencies".
@@ -197,20 +247,6 @@ class CaseDeps:
     support_plan: Literal["unified", "standard"]
 
 
-triage_agent = Agent(
-    deps_type=CaseDeps,
-    # NativeOutput sends the schema as the server's JSON response format, the
-    # way LM Studio can enforce it while generating.
-    output_type=NativeOutput(TriageValidated),
-    instructions=SYSTEM_PROMPT,
-    # When validation fails, send the errors back and try again, twice at most.
-    retries={"output": 2},
-    # Lets codes_must_appear_in_case() see the case text.
-    validation_context=lambda ctx: {"source_text": ctx.deps.case_text},
-)
-
-
-@triage_agent.output_validator
 def unified_plan_escalates(ctx: RunContext[CaseDeps], output: TriageValidated) -> TriageValidated:
     """A rule that needs data from outside the reply: Unified plan customers
     get escalation for severity B as well as A."""
@@ -221,6 +257,37 @@ def unified_plan_escalates(ctx: RunContext[CaseDeps], output: TriageValidated) -
             "needs_escalation to true."
         )
     return output
+
+
+def make_agent(output: Literal["native", "tool"] = "native") -> Agent[CaseDeps, TriageValidated]:
+    """The triage agent, with its output sent one of two ways.
+
+    "native" sends the schema as the server's JSON response format, the way
+    LM Studio can enforce it while generating. "tool" makes the schema a
+    tool the model must call instead: the answer then arrives as a tool
+    call, which LM Studio can't mistake for a thinking model's reasoning
+    (see LLM_REASONING_EFFORT in config.py), so thinking can stay on.
+    """
+    output_type = (
+        NativeOutput(TriageValidated)
+        if output == "native"
+        # The tool's description comes from the schema's (see TriageSchema).
+        else ToolOutput(TriageValidated, name="submit_triage")
+    )
+    agent = Agent(
+        deps_type=CaseDeps,
+        output_type=output_type,
+        instructions=SYSTEM_PROMPT,
+        # When validation fails, send the errors back and try again, twice at most.
+        retries={"output": 2},
+        # Lets codes_must_appear_in_case() see the case text.
+        validation_context=lambda ctx: {"source_text": ctx.deps.case_text},
+    )
+    agent.output_validator(unified_plan_escalates)
+    return agent
+
+
+triage_agent = make_agent()
 
 
 def make_model(settings: Settings | None = None) -> Model:

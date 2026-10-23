@@ -7,12 +7,13 @@ evaluation tools as experiment 02: each run is a session, the cases are the
 experiment on it.
 """
 
+import argparse
 import os
 import sys
 
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
-from triage import CASES, CaseDeps, make_model, triage_agent  # noqa: E402
+from triage import CASES, EXAMPLES, CaseDeps, make_agent, make_model  # noqa: E402
 from triage_grader import triage_matches  # noqa: E402
 
 from ai_playground.datasets import record_experiment, sync_dataset  # noqa: E402
@@ -72,29 +73,48 @@ MINIMUM_PASS_RATE = 0.8
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--output",
+        choices=["native", "tool"],
+        default="native",
+        help="how the schema reaches the model: as the response format, or as a tool to call",
+    )
+    parser.add_argument(
+        "--examples", action="store_true", help="add the worked examples to the instructions"
+    )
+    args = parser.parse_args()
+
     setup_tracing(pydantic_ai=True)
     model = make_model()
+    agent = make_agent(args.output)
+    instructions = EXAMPLES if args.examples else None
     # The application under test only gets the question, so look up each
     # case's support plan by its text.
     plans = {case.question: case.expected["plan"] for case in CASES_TO_GRADE}
 
     dataset = sync_dataset("triage-cases", CASES_TO_GRADE)
-    with traced_run("03_pydantic_ai_eval", tags=["eval"]) as run:
+    tags = ["eval", f"output-{args.output}"] + (["examples"] if args.examples else [])
+    with traced_run("03_pydantic_ai_eval", tags=tags) as run:
 
         def triage(case_text: str) -> str:
-            result = triage_agent.run_sync(
+            result = agent.run_sync(
                 case_text,
                 deps=CaseDeps(case_text, plans[case_text]),
                 model=model,
+                instructions=instructions,  # added to the agent's own
                 conversation_id=run.session_id,  # keep the run's session (see main.py)
             )
             return result.output.model_dump_json()
 
-        experiment = Experiment(run.session_id, dataset, run.metadata)
+        # The experiment records how this run was set up, so runs can be
+        # compared in Phoenix and Langfuse.
+        setup = {"output": args.output, "examples": str(args.examples).lower()}
+        experiment = Experiment(run.session_id, dataset, {**run.metadata, **setup})
         results = run_evaluation(CASES_TO_GRADE, triage, triage_matches, experiment)
 
     print_report(results)
-    print(f"Session and experiment: {run.session_id}")
+    print(f"Session and experiment: {run.session_id} ({setup})")
     publish_scores(results)
     record_experiment(experiment, results)
 
